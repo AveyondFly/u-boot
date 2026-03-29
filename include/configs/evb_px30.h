@@ -20,7 +20,10 @@
 
 #ifndef CONFIG_SPL_BUILD
 #undef CONFIG_BOOTCOMMAND
-#define CONFIG_BOOTCOMMAND RKIMG_BOOTCOMMAND
+/* Full boot sequence: Android -> FIT -> RKP -> Distro */
+#define CONFIG_BOOTCOMMAND \
+	"bootrkp;" \
+	"run distro_bootcmd;"
 #endif
 
 #endif

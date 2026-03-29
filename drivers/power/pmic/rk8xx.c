@@ -716,7 +716,7 @@ static int rk8xx_ofdata_to_platdata(struct udevice *dev)
 	rk8xx->pwr_ctr[2] = dev_read_u32_default(dev, "pwrctrl3_output", -1);
 
 	if (!dev_read_prop(dev, "shutdown-sequence", &len)) {
-		printf("can't find shutdown-sequence prop\n");
+		debug("can't find shutdown-sequence prop\n");
 	} else {
 		if (len / 4 != RK806_ID_END)
 			return 0;
@@ -736,7 +736,7 @@ static int rk8xx_ofdata_to_platdata(struct udevice *dev)
 	}
 
 	if (!dev_read_prop(dev, "vb-shutdown-sequence", &len)) {
-		printf("can't find vb-shutdown-sequence prop\n");
+		debug("can't find vb-shutdown-sequence prop\n");
 	} else {
 		if (len / 4 != RK806_ID_END)
 			return 0;

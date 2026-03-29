@@ -1147,17 +1147,11 @@ static int is_pmbr_valid(legacy_mbr * mbr)
 {
 	int i = 0;
 
+/* Disabled Rockchip hack - causes MBR detection failure
 #ifdef CONFIG_ARCH_ROCKCHIP
-	/*
-	 * In sd-update card, we use RKPARM partition in bootloader to load
-	 * firmware, and use MS-DOS partition in recovery to update system.
-	 * Now, we want to use gpt in bootloader and abandon the RKPARM
-	 * partition. So in new sd-update card, we write the MS-DOS partition
-	 * table and gpt to sd card. Then we must return 1 directly when test
-	 * the mbr sector otherwise the gpt is unavailable.
-	 */
 	return 1;
 #endif
+*/
 
 	if (!mbr || le16_to_cpu(mbr->signature) != MSDOS_MBR_SIGNATURE)
 		return 0;

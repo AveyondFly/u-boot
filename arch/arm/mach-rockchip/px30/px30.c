@@ -358,6 +358,11 @@ int set_armclk_rate(void)
 	}
 	clk.id = ARMCLK;
 	priv = dev_get_priv(clk.dev);
+
+	/* Use APLL_HZ as default if armclk_hz not set by DTB */
+	if (!priv->armclk_hz)
+		priv->armclk_hz = APLL_HZ;
+	printf("arm clk value is %ld\n", priv->armclk_hz);
 	ret = clk_set_rate(&clk, priv->armclk_hz);
 	if (ret < 0) {
 		printf("Failed to set armclk %lu\n", priv->armclk_hz);

@@ -172,6 +172,7 @@
 				regulator-boot-on;
 				regulator-min-microvolt = <950000>;
 				regulator-max-microvolt = <1350000>;
+				regulator-init-microvolt = <1250000>;
 				regulator-ramp-delay = <6001>;
 				regulator-initial-mode = <0x1>;
 				regulator-name = "vdd_arm";
@@ -186,6 +187,7 @@
 				regulator-boot-on;
 				regulator-min-microvolt = <950000>;
 				regulator-max-microvolt = <1350000>;
+				regulator-init-microvolt = <1150000>;
 				regulator-ramp-delay = <6001>;
 				regulator-initial-mode = <0x1>;
 				regulator-name = "vdd_logic";

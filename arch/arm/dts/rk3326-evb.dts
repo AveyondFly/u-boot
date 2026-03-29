@@ -157,6 +157,7 @@
 				regulator-boot-on;
 				regulator-min-microvolt = <950000>;
 				regulator-max-microvolt = <1350000>;
+				regulator-init-microvolt = <1250000>;
 				regulator-ramp-delay = <6001>;
 				regulator-initial-mode = <0x1>;
 				regulator-name = "vdd_arm";
@@ -171,6 +172,7 @@
 				regulator-boot-on;
 				regulator-min-microvolt = <950000>;
 				regulator-max-microvolt = <1350000>;
+				regulator-init-microvolt = <1150000>;
 				regulator-ramp-delay = <6001>;
 				regulator-initial-mode = <0x1>;
 				regulator-name = "vdd_logic";
@@ -388,8 +390,6 @@
 	u-boot,dm-pre-reloc;
 	fifo-mode;
 	bus-width = <8>;
-	cap-mmc-highspeed;
-	mmc-hs200-1_8v;
 	supports-emmc;
 	disable-wp;
 	non-removable;
@@ -433,5 +433,10 @@
 };
 
 &crypto {
+	status = "okay";
+};
+
+
+&uart5 {
 	status = "okay";
 };

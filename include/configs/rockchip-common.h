@@ -174,9 +174,6 @@
 	"boot_fit;"
 #else
 #define RKIMG_BOOTCOMMAND			\
-	"boot_android ${devtype} ${devnum};"	\
-	"boot_fit;"				\
-	"bootrkp;"				\
 	"run distro_bootcmd;"
 #endif
 

@@ -27,7 +27,7 @@ int __weak show_board_info(void)
 		printf("Model: %s\n", model);
 #endif
 	if (!gd->flags & GD_FLG_RELOC)
-		printf("MPIDR: 0x%lx\n", (ulong)read_mpidr() & 0xfff);
+		printf("MPIDR: 0x%lx\n", (ulong)read_mpidr());
 
 #ifdef CONFIG_ARM64_BOOT_AARCH32
 	if (!(gd->flags & GD_FLG_RELOC))
