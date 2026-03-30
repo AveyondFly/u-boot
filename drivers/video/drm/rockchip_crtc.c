@@ -122,6 +122,7 @@ static const struct rockchip_crtc rk3506_vop_data = {
 	.data = &rk3506_vop,
 };
 
+#ifdef CONFIG_DRM_ROCKCHIP_VOP2
 static const struct rockchip_crtc rk3528_vop_data = {
 	.funcs = &rockchip_vop2_funcs,
 	.data = &rk3528_vop,
@@ -151,6 +152,7 @@ static const struct rockchip_crtc rk3588_vop_data = {
 	.funcs = &rockchip_vop2_funcs,
 	.data = &rk3588_vop,
 };
+#endif /* CONFIG_DRM_ROCKCHIP_VOP2 */
 
 static const struct udevice_id rockchip_vop_ids[] = {
 	{
@@ -210,7 +212,9 @@ static const struct udevice_id rockchip_vop_ids[] = {
 	}, {
 		.compatible = "rockchip,rk3506-vop",
 		.data = (ulong)&rk3506_vop_data,
-	}, {
+	},
+#ifdef CONFIG_DRM_ROCKCHIP_VOP2
+	{
 		.compatible = "rockchip,rk3528-vop",
 		.data = (ulong)&rk3528_vop_data,
 	}, {
@@ -228,7 +232,9 @@ static const struct udevice_id rockchip_vop_ids[] = {
 	}, {
 		.compatible = "rockchip,rk3588-vop",
 		.data = (ulong)&rk3588_vop_data,
-	}, { }
+	},
+#endif /* CONFIG_DRM_ROCKCHIP_VOP2 */
+	{ }
 };
 
 static int rockchip_vop_probe(struct udevice *dev)
@@ -295,6 +301,7 @@ UCLASS_DRIVER(rockchip_crtc) = {
 };
 
 #else
+#ifdef CONFIG_DRM_ROCKCHIP_VOP2
 static struct rockchip_crtc rk3528_vop_data = {
 	.funcs = &rockchip_vop2_funcs,
 	.data = &rk3528_vop,
@@ -307,5 +314,12 @@ int rockchip_spl_vop_probe(struct crtc_state *crtc_state)
 
 	return 0;
 }
-#endif
+#else
+/* Stub for non-VOP2 platforms */
+int rockchip_spl_vop_probe(struct crtc_state *crtc_state)
+{
+	return -ENODEV;
+}
+#endif /* CONFIG_DRM_ROCKCHIP_VOP2 */
 
+#endif /* CONFIG_SPL_BUILD */

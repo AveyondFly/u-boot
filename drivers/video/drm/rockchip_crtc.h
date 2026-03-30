@@ -58,7 +58,9 @@ struct rockchip_crtc_funcs {
 struct vop_data;
 struct vop2_data;
 extern const struct rockchip_crtc_funcs rockchip_vop_funcs;
+#ifdef CONFIG_DRM_ROCKCHIP_VOP2
 extern const struct rockchip_crtc_funcs rockchip_vop2_funcs;
+#endif /* CONFIG_DRM_ROCKCHIP_VOP2 */
 extern const struct vop_data rk3036_vop;
 extern const struct vop_data px30_vop_lit;
 extern const struct vop_data px30_vop_big;
@@ -77,10 +79,12 @@ extern const struct vop_data rv1106_vop;
 extern const struct vop_data rv1108_vop;
 extern const struct vop_data rv1126_vop;
 extern const struct vop_data rv1126b_vop;
+#ifdef CONFIG_DRM_ROCKCHIP_VOP2
 extern const struct vop2_data rk3528_vop;
 extern const struct vop2_data rk3562_vop;
 extern const struct vop2_data rk3568_vop;
 extern const struct vop2_data rk3576_vop;
 extern const struct vop2_data rk3576_vop_lit;
 extern const struct vop2_data rk3588_vop;
+#endif /* CONFIG_DRM_ROCKCHIP_VOP2 */
 #endif
