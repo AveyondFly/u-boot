@@ -1,0 +1,186 @@
+RK3562 板级构建与关机充电
+========================
+
+1. 三种 DTB 的关系
+
+u-boot.dtb 是 U-Boot 自己的早期控制 DTB，已作为 FIT 的 fdt 节点打包在
+uboot.img 中；不用把单独的 u-boot.dtb 拷贝到 /flash。
+
+rk3562-charge.dtb 用于 U-Boot 初始化板级 PMIC、电量计、按键和充电灯。
+它以该板原厂 Linux DTB 为基础应用板级 overlay，与早期控制 DTB 分开管理。
+
+Linux 的 DTB 仍由 extlinux.conf 的 FDT 指定。当前 NGP45H 为
+/device_trees/rk3562-ngp45h.dtb，不因充电构建而改动。
+
+默认只构建 embedded 内嵌模式，输出分目录保存：
+  embedded：充电 DTB 打包为 uboot.img 的 kern-fdt 节点，并强制使用内嵌版本。
+            不需要外部 /flash/rk3562-charge.dtb。单独导出的 DTB 用于检查。
+  external：保留为显式选择的调试模式。U-Boot 启动时从启动介质可启动分区读取
+            /rk3562-charge.dtb，当前 TF 卡下对应 /flash/rk3562-charge.dtb。
+
+两种模式都包含早期控制 DTB。内嵌模式仍需要 extlinux 指定的 Linux DTB。
+更改外部模式的充电 DTB 可以单独更新文件；更改内嵌模式的充电 DTB 需要重打包
+uboot.img。内嵌 DTB 限制为 512 KiB，对应现有 U-Boot 分配的缓冲区大小。
+
+2. 共用构建入口
+
+  ./build_uboot_rk3562_board.sh --list-boards
+  ./build_uboot_rk3562_board.sh --board ngp45h
+  ./build_uboot_rk3562_board.sh --board ngp45h --dtb-only
+
+兼容入口 ./build_uboot_rk3562_charge.sh 等价于选择 ngp45h，接受相同参数。
+原 build-rk3562-charge/ 中的旧产物保留，不会由新入口覆盖。
+
+默认使用：
+  /opt/toolchains/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+可通过 CROSS_COMPILE、JOBS 覆盖工具链前缀、并行度。
+--dtb-only 只依赖 dtc/fdtoverlay/fdtget，不调用交叉编译器或 rkbin。
+
+目录约定：
+  board/rockchip/rk3562-profiles/<board>/board.json  版本化板级配置
+  board/rockchip/rk3562-profiles/<board>/charge.dtso 板级充电 overlay
+  board/rockchip/rk3562-profiles/<board>/source/     可选 U-Boot 源码补充
+  board-data/rk3562/<board>/                       原厂只读提取输入
+  build-rk3562-boards/<board>/external/             外部 DTB 版完整产物
+  build-rk3562-boards/<board>/embedded/             内嵌 DTB 版完整产物
+  build-rk3562-boards/<board>/dtb/                  单独编译 DTB 的产物
+
+board-data 中的设备输入、诊断记录和刷写备份仅保留在本地，不提交 Git。
+新 checkout 需要先提取原厂资料或指定 --input-dir。rkbin 的固定版本和校验和
+纳入版本控制，归档仅作为本地缓存；首次构建缺少缓存时会下载并校验固定版本。
+SFTP 提取脚本依赖 Python paramiko；构建使用 Python 3.9 或更新版本及
+dtc、fdtoverlay、fdtget、Git、tar、curl 和指定交叉编译器。
+
+--input-dir、--output 可覆盖默认目录；--profile /path/board.json 可使用尚未加入
+机型目录的配置。输入和输出目录必须分开，避免覆盖原厂备份。
+完整构建先在临时目录生成并校验，再替换该板自己的输出目录；失败保留上次
+成功的产物。相同输出目录有构建锁，不同机型/模式可同时构建。
+
+3. 新设备的原厂资料提取
+
+先核对该设备 Linux 下实际的存储设备、IDB 偏移、U-Boot 分区和原厂 DTB 路径。
+使用只读 SFTP 提取脚本，例如：
+
+  python3 scripts/capture_rk3562_board.py \
+    --board your-board --host DEVICE_IP --user root --insecure \
+    --vendor-dtb /flash/VENDOR.dtb \
+    --idb-device /dev/mmcblk0 --idb-offset 32768 --idb-size 524288 \
+    --uboot-device /dev/disk/by-partlabel/uboot --uboot-size 4194304
+
+设备路径与偏移必须换成该设备核实过的值。--insecure 表示不校验 SSH 主机指纹；
+可不传该选项，使用已有 known_hosts。支持 --key；密码从 SSH_PASSWORD 环境
+变量读取。脚本只通过 SFTP 以 rb 模式打开设备端文件，不执行远端写入命令。
+
+提取结果：
+  linux-vendor.dtb   原厂 Linux DTB
+  idb-original.bin   从指定偏移起读取的 RKNS 槽
+  uboot-original.img 原厂 U-Boot FIT/分区备份
+  snapshot.json      来源主机、范围、机型和 SHA-256
+
+已有快照不会覆盖，可以用 --output 保存其他批次，然后构建时用 --input-dir
+选择。板子有不同硬件版本时应使用不同 board id，保留各自的 GPIO 与电池配置。
+
+这里提取的是 DDR、BL31、BL32 等板上固件的载体；rkbin 的打包工具和 INI 仍由
+共用、固定校验和的 rkbin 归档提供。完整板级构建强制使用该板 IDB/FIT 中的
+固件覆盖归档默认值，不会因输入缺失回退到上一块板的固件。
+可用 RKBIN 或 RKBIN_ARCHIVE 等底层参数更换打包工具集。
+
+4. 新增板级配置
+
+参考 ngp45h 目录新增一份配置，将 board.json 的 id 改为新机型。
+共用 Python 构建程序不包含机型、IP、灯色或 GPIO 编号的分支。
+
+board.json 的主要字段：
+  schema_version：目前为 1。
+  id：小写字母/数字/_/-，与机型目录一致。
+  defconfig：共用或板级 U-Boot defconfig，位于 configs/。
+  inputs：linux_dtb、idb、uboot 三个输入文件名，相对于 --input-dir。
+          linux_dtb 也可改为 linux_dts，接受反编译后的独立 DTS 文本。
+  overlays：依次应用的 .dtso 文件，相对于 board.json 所在目录。
+  checks：原厂 DTB 校验，可比较字符串、cells 或 GPIO 控制器/引脚/极性。
+          不依赖原厂写的 EVB model 字符串判断板型。
+  output_checks：对应用 overlay 后的 DTB 进行属性校验。
+  dtb_mode：默认 embedded，板级配置和命令行可显式覆盖为 external。
+  dtb_path：外部模式的启动分区路径，默认 /rk3562-charge.dtb。
+  kconfig：可选字典，覆盖 defconfig，使用不带 CONFIG_ 前缀的符号名。
+           JSON bool 为 y/n，字符串为 Kconfig 字符串，整数为数值。
+  required_kconfig：该板必须实际启用的驱动，例如 PMIC、电量计、电源键驱动。
+  source_overlay：可选源码目录，默认 source/，相对于 board.json 目录。
+
+如新板需要不同早期串口或存储配置，可以在
+  source/arch/arm/dts/rk3562-your-board.dts
+放置板级 U-Boot DTS，再设置：
+  "kconfig": {"DEFAULT_DEVICE_TREE": "rk3562-your-board"}
+新增 DTS 可以引用共用 rk3562.dtsi / rk3562-evb.dts。源码补充仅复制到隔离的
+构建树，不会更改共用源码。PMIC 和电池参数仍应取自该板自己的原厂资料。
+
+linux_dts 输入应是可直接交给 dtc 的独立或已预处理 DTS；包含 Linux 源码
+#include 的 DTS 应先由对应 Linux 源码树预处理。overlay 若引用 &gpio3 等符号，
+其基础 DTB 需要保留对应 __symbols__，或改用该板可解析的节点/句柄。
+
+当前固件提取器支持 SHA-256 校验的外部数据 FIT、未压缩的任意数量 ATF 段、
+加载地址为 0x08400000 的 OP-TEE，以及 RKNS IDB。遇到其他封装格式会停止，
+需要扩展对应提取器后再使用；不会把无法解析的固件替换为默认版本。
+BL31 的 ELF 是供 decode_bl31.py 使用的 PT_LOAD 打包容器，并非原始链接 ELF。
+最终 FIT 中每段 BL31/BL32 的字节、地址、长度都与原厂提取结果核对。
+
+5. 灯色与测试
+
+GPIO、极性、普通充电灯/接近满电灯、SOC 阈值均由板级 DTS 配置。
+NGP45H 当前为 GPIO3_C2 红灯、GPIO3_C1 蓝灯：低于 90% 红，90%..99% 蓝，
+电量计报告 100% 时两灯熄灭。其他板可映射为红/绿等组合。
+100% 使用电量计报告值，不单独读取硬件充电终止标志。
+绑定说明见 doc/device-tree-bindings/power/rockchip-charge-leds.txt。
+
+NGP45H 配置关闭自动退出充电及充电开屏，每 5 秒从 WFI 唤醒刷新电量/LED。
+长按电源键、RTC 闹钟、控制台退出和特殊启动模式沿用现有框架。
+NGP45H 的 v2/v3 诊断记录确认：所有充电依赖探测成功，mode:11 允许充电，
+但 dc-level:0、sys-sts:130、online:0 导致继续启动 Linux。补齐 GPIO 时钟
+初始化没有解决实机问题。随后做 Linux 开机插拔线对照：拔线后电流为
+-378mA、PMIC f0 从 0xc0
+变为 0x80，但 GPIO3_A7 仍高、AC online 仍为 1。原厂 dc_det_gpio 不能
+作为本机可靠输入检测信号。v4-pmic 板级配置选择 PMIC 实时插入位，跳过该
+GPIO，并显式关闭 OTG 输出、开启输入充电路径，首次在线查询最多等待 3 秒。
+这些参数在板级 overlay 中，其他板默认保留原有检测及初始化行为。
+v4-pmic 已通过用户实机验证：关机后插电不再自动进入 Linux，充电蓝灯亮。
+验证镜像 SHA-256：
+  d9590eb0b49c030fed2d4ceed5e8305f255a9397423ac36e0a562c493c2f8aab
+镜像及刷写备份保存在 board-data/rk3562/ngp45h/flashes/20261018T110756Z/。
+当前通过此项验证的版本记录于 board-data/rk3562/ngp45h/validated-charging.json。
+用户后续反馈整体表现正常；各电量阈值及按键/拔线行为未单独留测量记录。
+
+共用 RK817 驱动也支持原厂 dc_det_gpio 的可选解析，适用于已确认 GPIO
+随插拔线变化的其他板。RK3562 GPIO 探测会从自己的 DTS clocks 属性开启
+GPIO0..4 的 APB 总线及父级门控，采用高 16 位写掩码保留无关位。
+
+没有串口时，新诊断版会在最终 Linux 启动参数中追加 uboot.charge=v4-pmic,...。
+该记录在 extlinux 替换 bootargs 之后加入，包含 enabled、pmic、gauge、key、
+soc、led-low、led-high、display、battery、lowpower、mode、online、voltage 等
+阶段及返回值。entered 表示进入了充电循环；power-key、rtc-alarm、auto-soc、
+auto-voltage、ctrlc 表示退出触发条件。display 为负数表示充电设备探测失败。
+例如 mode:0 表示框架选择普通启动后跳过充电；online:0 表示 U-Boot 认为充电器
+不在线。读取 /proc/cmdline 即可取回记录，不需要更改 Linux DTB 或用户系统。
+v2-dc 额外记录 auto-exit、rk817、dc-valid、dc-base、dc-pin、dc-flags、
+dc-level、dc-func、sys-sts、on-src；DC 记录只在首次在线查询时写入。
+dc-level 是应用 DTS 极性后的逻辑值，dc-func 是 GPIO 驱动报告的功能枚举。
+dc-base 是 U-Boot 动态编号，不能当作 Linux 的 GPIO bank 编号。
+v3-gpio 增加 dc-reg（GPIO 控制器物理地址，有符号十进制）及 gpio-clk、
+gpio-gate0/gpio-gate1（GPIO3/4 APB 时钟号、开启前/后的门控寄存器）。
+v4-pmic 增加 detect-ms（首次检测等待）、sys-before（输入初始化前的 f0）、
+usb-input（e6）、power-en（b4）、powerpath（e4）、usb-mv（USB ADC 电压）。
+PMIC 检测配置下 dc-valid:0 是预期。on-src:64 是插电唤醒，源自 RK817
+Datasheet Rev 2.1 的 ON_SOURCE[6]，不是实时插入状态，不能用来替代拔线检测。
+这些记录用于定位，不会强制伪造“电源在线”或更改启动模式。
+
+主机回归测试：
+  PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_rk3562_board.py -v
+  PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_rk817_dc.py
+  PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_rk3562_gpio_clock.py
+  PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_rk3562_charge_leds.py
+  PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_rk3562_charge_trace.py
+
+board-build.json 记录板号、DTB 模式、安装路径、输入 SHA-256、输出 SHA-256、
+源码 commit/已跟踪差异摘要、构建脚本摘要和快照摘要。u-boot.config 保存实际
+生效配置，requested_defconfig 保存请求配置，build.log 保存完整编译日志。
+每次完整构建都检查固件 SHA、DDR 与 BL31/BL32 逐字节一致性；内嵌模式还从
+最终 FIT 取出 kern-fdt，核对与生成的充电 DTB 完全一致。

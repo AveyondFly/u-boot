@@ -142,6 +142,10 @@ static int dbg_enable;
 #define PMIC_CHRG_OUT		0x00E4
 #define USB_CTRL_REG		0x00E5
 #define PMIC_CHRG_TERM		0x00E6
+#define RK817_USB_INPUT_EN	BIT(6)
+#define RK817_POWERPATH_EN	BIT(7)
+#define RK817_OTG_EN		BIT(2)
+#define RK817_OTG_EN_MASK		BIT(6)
 #define BAT_LTS_TS		0x00E9
 #define PMIC_SYS_STS		0x00f0
 #define PLUG_IN_STS		BIT(6)
@@ -254,6 +258,11 @@ struct temp_chrg_table {
 
 struct rk817_battery_device {
 	struct udevice *dev;
+	struct gpio_desc dc_det;
+	bool power_trace_done;
+	bool usb_input_init;
+	int usb_input_sys_before;
+	u32 charger_detect_timeout_ms;
 	int				res_div;
 	bool				is_first_power_on;
 	bool				is_initialized;
@@ -1222,19 +1231,81 @@ static int rk817_bat_dwc_otg_check_dpdm(struct rk817_battery_device *battery)
 	}
 }
 
+static bool rk817_bat_dc_is_online(struct rk817_battery_device *battery)
+{
+	if (!dm_gpio_is_valid(&battery->dc_det))
+		return false;
+
+	/* dm_gpio_get_value() applies the active-low flag from the board DTB. */
+	return dm_gpio_get_value(&battery->dc_det) > 0;
+}
+
+static bool rk817_bat_power_is_online(struct rk817_battery_device *battery)
+{
+	int status;
+
+	if (rk817_bat_dc_is_online(battery))
+		return true;
+
+	status = rk817_bat_read(battery, PMIC_SYS_STS);
+	return status >= 0 && (status & PLUG_IN_STS);
+}
+
 static bool rk817_bat_update_get_chrg_online(struct udevice *dev)
 {
 	struct rk817_battery_device *battery = dev_get_priv(dev);
+	struct gpio_desc *dc = &battery->dc_det;
+	const struct dm_gpio_ops *ops;
+	bool online = rk817_bat_power_is_online(battery);
 
-	if (rk817_bat_read(battery, PMIC_SYS_STS) & PLUG_IN_STS)
-		return AC_CHARGER;
-	else
-		return NO_CHARGER;
+	/* Capture the initial decision once, without filling the trace on polls. */
+	if (!battery->power_trace_done) {
+		ulong start = get_timer(0);
+
+		while (!online && get_timer(start) < battery->charger_detect_timeout_ms) {
+			mdelay(10);
+			online = rk817_bat_power_is_online(battery);
+		}
+		charge_display_trace("detect-ms", get_timer(start));
+		charge_display_trace("rk817", battery->variant);
+		if (battery->usb_input_init) {
+			charge_display_trace("sys-before", battery->usb_input_sys_before);
+			charge_display_trace("usb-input", rk817_bat_read(battery, PMIC_CHRG_TERM));
+			charge_display_trace("power-en", rk817_bat_read(battery, RK817_POWER_EN3));
+			charge_display_trace("powerpath", rk817_bat_read(battery, PMIC_CHRG_OUT));
+			charge_display_trace("usb-mv", battery->voltage_usb);
+		}
+		charge_display_trace("dc-valid", dm_gpio_is_valid(dc));
+		if (dm_gpio_is_valid(dc)) {
+			struct gpio_dev_priv *bank = dev_get_uclass_priv(dc->dev);
+
+			ops = gpio_get_ops(dc->dev);
+			charge_display_trace("dc-reg", (u32)dev_read_addr(dc->dev));
+			charge_display_trace("dc-base", bank->gpio_base);
+			charge_display_trace("dc-pin", dc->offset);
+			charge_display_trace("dc-flags", dc->flags);
+			charge_display_trace("dc-level", dm_gpio_get_value(dc));
+			if (ops->get_function)
+				charge_display_trace("dc-func",
+					ops->get_function(dc->dev, dc->offset));
+		}
+		charge_display_trace("sys-sts", rk817_bat_read(battery,
+							 PMIC_SYS_STS));
+		charge_display_trace("on-src", rk817_bat_read(battery,
+							RK817_ON_SOURCE));
+		battery->power_trace_done = true;
+	}
+
+	return online;
 }
 
 static int rk817_bat_get_usb_state(struct rk817_battery_device *battery)
 {
 	int charger_type;
+
+	/* Some boards power the system through DC without setting USB plug-in. */
+	if (rk817_bat_dc_is_online(battery))
+		return DC_CHARGER;
 
 	switch (rk817_bat_dwc_otg_check_dpdm(battery)) {
 	case POWER_SUPPLY_TYPE_UNKNOWN:
@@ -1264,8 +1335,8 @@ static int rk817_bat_get_charger_type(struct rk817_battery_device *battery)
 	u32 chrg_type;
 	u8 val;
 
-	/* check by ic hardware: this check make check work safer */
-	if ((rk817_bat_read(battery, PMIC_SYS_STS) & PLUG_IN_STS) == 0)
+	/* Accept either the optional board DC input or the PMIC USB input. */
+	if (!rk817_bat_power_is_online(battery))
 		return NO_CHARGER;
 
 	/* virtual or bat not exist */
@@ -1567,11 +1638,39 @@ static void parse_temperature_chrg_table(struct rk817_battery_device *battery,
 	}
 }
 
+static int rk817_fg_init_dc_det(struct udevice *dev)
+{
+	struct rk817_battery_device *battery = dev_get_priv(dev);
+	ofnode node = dev_ofnode(dev);
+	const char *source = dev_read_string(dev, "rockchip,charger-detect-source");
+	int ret;
+
+	/* A vendor GPIO may be unused on a particular board revision. */
+	if (source && !strcmp(source, "pmic"))
+		return 0;
+	if (source && strcmp(source, "auto"))
+		return -EINVAL;
+
+	/* Vendor DTBs may put DC detection on battery or its charger sibling. */
+	if (!ofnode_get_property(node, "dc_det_gpio", NULL)) {
+		node = dev_read_subnode(dev->parent, "charger");
+		if (!ofnode_valid(node) ||
+		    !ofnode_get_property(node, "dc_det_gpio", NULL))
+			return 0;
+	}
+
+	ret = gpio_request_by_name_nodev(node, "dc_det_gpio", 0,
+				       &battery->dc_det, GPIOD_IS_IN);
+	if (ret)
+		dev_err(dev, "cannot request dc_det_gpio: %d\n", ret);
+	return ret;
+}
+
 static int rk817_fg_ofdata_to_platdata(struct udevice *dev)
 {
 	struct rk8xx_priv *rk8xx = dev_get_priv(dev->parent);
 	struct rk817_battery_device *battery = dev_get_priv(dev);
-	int len, value, size;
+	int len, value, size, ret;
 	const char *prop;
 	int i;
 
@@ -1583,6 +1682,16 @@ static int rk817_fg_ofdata_to_platdata(struct udevice *dev)
 
 	battery->dev = dev;
 	battery->variant = rk8xx->variant;
+	battery->usb_input_init = dev_read_bool(dev, "rockchip,usb-input-init");
+	if (battery->usb_input_init && battery->variant != RK817_ID)
+		return -EINVAL;
+	battery->charger_detect_timeout_ms = dev_read_u32_default(dev,
+				"rockchip,charger-detect-timeout-ms", 0);
+	if (battery->charger_detect_timeout_ms > 10000)
+		return -EINVAL;
+	ret = rk817_fg_init_dc_det(dev);
+	if (ret)
+		return ret;
 	/* Parse ocv table */
 	prop = dev_read_prop(dev, "ocv_table", &len);
 	if (!prop) {
@@ -1778,17 +1887,52 @@ static int rk817_fg_init(struct rk817_battery_device *battery)
 	return 0;
 }
 
+static int rk817_fg_init_usb_input(struct rk817_battery_device *battery)
+{
+	struct udevice *pmic = battery->dev->parent;
+	int value, ret;
+
+	if (!battery->usb_input_init)
+		return 0;
+	battery->usb_input_sys_before = rk817_bat_read(battery, PMIC_SYS_STS);
+	if (battery->usb_input_sys_before < 0)
+		return battery->usb_input_sys_before;
+
+	/* Same direction setup as the RK817 Linux charger: sink, not OTG. */
+	value = pmic_reg_read(pmic, RK817_POWER_EN3);
+	if (value < 0)
+		return value;
+	ret = pmic_reg_write(pmic, RK817_POWER_EN3,
+			     (value & ~RK817_OTG_EN) | RK817_OTG_EN_MASK);
+	if (ret)
+		return ret;
+	value = pmic_reg_read(pmic, PMIC_CHRG_OUT);
+	if (value < 0)
+		return value;
+	ret = pmic_reg_write(pmic, PMIC_CHRG_OUT, value | RK817_POWERPATH_EN);
+	if (ret)
+		return ret;
+	value = pmic_reg_read(pmic, PMIC_CHRG_TERM);
+	if (value < 0)
+		return value;
+	return pmic_reg_write(pmic, PMIC_CHRG_TERM, value | RK817_USB_INPUT_EN);
+}
+
 static int rk817_fg_probe(struct udevice *dev)
 {
 	struct rk8xx_priv *priv = dev_get_priv(dev->parent);
 	struct rk817_battery_device *battery = dev_get_priv(dev);
+	int ret;
 
 	if ((priv->variant != RK817_ID) && ((priv->variant != RK809_ID))) {
 		debug("Not support pmic variant: rk%x\n", priv->variant);
 		return -EINVAL;
 	}
 
-	return rk817_fg_init(battery);
+	ret = rk817_fg_init(battery);
+	if (ret)
+		return ret;
+	return rk817_fg_init_usb_input(battery);
 }
 
 U_BOOT_DRIVER(rk817_fg) = {

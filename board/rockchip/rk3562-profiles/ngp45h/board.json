@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "ngp45h",
+  "description": "Xifan NGP45H / RK817 / red and blue charging LEDs",
+  "defconfig": "rk3562_charge_defconfig",
+  "dtb_mode": "embedded",
+  "dtb_path": "/rk3562-charge.dtb",
+  "required_kconfig": ["IRQ", "RK8XX_PWRKEY", "PMIC_RK8XX", "POWER_FG_RK817", "LED_GPIO"],
+  "inputs": {
+    "linux_dtb": "linux-vendor.dtb",
+    "idb": "idb-original.bin",
+    "uboot": "uboot-original.img"
+  },
+  "overlays": ["charge.dtso"],
+  "checks": [
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "dc_det_gpio",
+      "gpio_controller": "/pinctrl/gpio@ffac0000",
+      "pin": 7,
+      "flags": 0
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "charge_red_gpio",
+      "gpio_controller": "/pinctrl/gpio@ffac0000",
+      "pin": 18,
+      "flags": 0
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "charge_blue_gpio",
+      "gpio_controller": "/pinctrl/gpio@ffac0000",
+      "pin": 17,
+      "flags": 0
+    }
+  ],
+  "output_checks": [
+    {"node": "/i2c@ff200000/pmic@20/battery", "property": "rockchip,charger-detect-source", "string": "pmic"},
+    {"node": "/i2c@ff200000/pmic@20/battery", "property": "rockchip,usb-input-init", "cells": []},
+    {"node": "/i2c@ff200000/pmic@20/battery", "property": "rockchip,charger-detect-timeout-ms", "cells": [3000]},
+    {"node": "/charge-animation", "property": "rockchip,uboot-charge-on", "cells": [1]},
+    {"node": "/charge-animation", "property": "rockchip,uboot-exit-charge-auto", "cells": [0]},
+    {"node": "/charge-animation", "property": "rockchip,charged-led-min-soc", "cells": [90]},
+    {"node": "/charge-animation", "property": "rockchip,charge-leds-off-at-full", "cells": []}
+  ]
+}

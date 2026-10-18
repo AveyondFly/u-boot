@@ -57,6 +57,7 @@ struct charge_animation_priv {
 #ifdef CONFIG_LED
 	struct udevice *led_charging;
 	struct udevice *led_full;
+	int led_soc;
 #endif
 	const struct charge_image *image;
 	int image_num;
@@ -198,9 +199,11 @@ static int charge_animation_ofdata_to_platdata(struct udevice *dev)
 		dev_read_u32_default(dev, "rockchip,uboot-charge-on", 0);
 	pdata->android_charge =
 		dev_read_u32_default(dev, "rockchip,android-charge-on", 0);
+	charge_display_trace("enabled", pdata->uboot_charge);
 
 	pdata->auto_exit_charge =
 		dev_read_u32_default(dev, "rockchip,uboot-exit-charge-auto", 0);
+	charge_display_trace("auto-exit", pdata->auto_exit_charge);
 	pdata->exit_charge_level =
 		dev_read_u32_default(dev, "rockchip,uboot-exit-charge-level", 0);
 	pdata->exit_charge_voltage =
@@ -211,6 +214,15 @@ static int charge_animation_ofdata_to_platdata(struct udevice *dev)
 
 	pdata->screen_on_voltage =
 		dev_read_u32_default(dev, "rockchip,screen-on-voltage", 0);
+	pdata->charged_led_min_soc =
+		dev_read_u32_default(dev, "rockchip,charged-led-min-soc", 100);
+	if (pdata->charged_led_min_soc < 1 ||
+	    pdata->charged_led_min_soc > 100)
+		return -EINVAL;
+	pdata->charge_leds_off_at_full =
+		dev_read_bool(dev, "rockchip,charge-leds-off-at-full");
+	pdata->screen_off_at_start =
+		dev_read_bool(dev, "rockchip,screen-off-at-start");
 	pdata->system_suspend =
 		dev_read_u32_default(dev, "rockchip,system-suspend", 0);
 
@@ -251,6 +263,7 @@ static int check_key_press(struct udevice *dev)
 
 #ifdef CONFIG_DM_RTC
 	if (priv->rtc && rtc_alarm_trigger(priv->rtc)) {
+		charge_display_trace("rtc-alarm", 1);
 		printf("rtc alarm trigger...\n");
 		return KEY_PRESS_LONG_DOWN;
 	}
@@ -423,35 +436,49 @@ static void charge_show_logo(void) {}
 #ifdef CONFIG_LED
 static int leds_update(struct udevice *dev, int soc)
 {
+	struct charge_animation_pdata *pdata = dev_get_platdata(dev);
 	struct charge_animation_priv *priv = dev_get_priv(dev);
-	static int old_soc = -1;
-	int ret, ledst;
+	struct udevice *leds[] = { priv->led_charging, priv->led_full };
+	bool on[2];
+	int i, ret;
 
-	if (old_soc == soc)
+	if (soc < 0 || soc > 100)
+		return -EINVAL;
+	if (priv->led_soc == soc)
 		return 0;
 
-	old_soc = soc;
-	if (priv->led_charging) {
-		ledst = (soc < 100) ? LEDST_ON : LEDST_OFF;
-		ret = led_set_state(priv->led_charging, ledst);
-		if (ret) {
-			printf("set charging led %s failed, ret=%d\n",
-			       (ledst == LEDST_ON) ? "ON" : "OFF", ret);
-			return ret;
-		}
-	}
+	on[0] = soc < pdata->charged_led_min_soc;
+	on[1] = soc >= pdata->charged_led_min_soc;
+	if (pdata->charge_leds_off_at_full && soc == 100)
+		on[0] = on[1] = false;
 
-	if (priv->led_full) {
-		ledst = (soc == 100) ? LEDST_ON : LEDST_OFF;
-		ret = led_set_state(priv->led_full, ledst);
-		if (ret) {
-			printf("set charging full led %s failed, ret=%d\n",
-			       ledst == LEDST_ON ? "ON" : "OFF", ret);
+	/* Turn off the previous colour before enabling the next one. */
+	for (i = 0; i < ARRAY_SIZE(leds); i++) {
+		if (!leds[i] || on[i])
+			continue;
+		ret = led_set_state(leds[i], LEDST_OFF);
+		if (ret)
 			return ret;
-		}
 	}
+	for (i = 0; i < ARRAY_SIZE(leds); i++) {
+		if (!leds[i] || !on[i])
+			continue;
+		ret = led_set_state(leds[i], LEDST_ON);
+		if (ret)
+			return ret;
+	}
+	priv->led_soc = soc;
 
 	return 0;
+}
+
+static int charge_get_led(struct udevice *dev, const char *property,
+			  const char *label, struct udevice **led)
+{
+	if (dev_read_prop(dev, property, NULL))
+		return uclass_get_device_by_phandle(UCLASS_LED, dev, property, led);
+
+	return led_get_by_label(label, led);
 }
 #else
 static int leds_update(struct udevice *dev, int soc) { return 0; }
@@ -596,13 +623,16 @@ static int charge_animation_show(struct udevice *dev)
  * 6. Enter charge !
  *
  */
-	if (!fuel_gauge_bat_is_exist(fg)) {
+	ret = fuel_gauge_bat_is_exist(fg);
+	charge_display_trace("battery", ret);
+	if (!ret) {
 		printf("Exit charge: battery is not exist\n");
 		return 0;
 	}
 
 	/* Extrem low power charge */
 	ret = charge_extrem_low_power(dev);
+	charge_display_trace("lowpower", ret);
 	if (ret < 0) {
 		printf("extrem low power charge failed, ret=%d\n", ret);
 		return ret;
@@ -610,6 +640,7 @@ static int charge_animation_show(struct udevice *dev)
 
 	/* If there is preboot command, exit */
 	if (preboot && !strstr(preboot, "dvfs")) {
+		charge_display_trace("preboot", 1);
 		printf("Exit charge: due to preboot cmd '%s'\n", preboot);
 		return 0;
 	}
@@ -617,14 +648,16 @@ static int charge_animation_show(struct udevice *dev)
 	/* Not valid charge mode, exit */
 #ifdef CONFIG_RKIMG_BOOTLOADER
 	boot_mode = rockchip_get_boot_mode();
+	charge_display_trace("mode", boot_mode);
 	if ((boot_mode != BOOT_MODE_CHARGING) &&
 	    (boot_mode != BOOT_MODE_UNDEFINE)) {
-		printf("Exit charge: due to boot mode\n");
+		printf("Exit charge: due to boot mode (%d)\n", boot_mode);
 		return 0;
 	}
 #endif
 	/* No charger online + low power? shutdown */
 	charging = fg_charger_get_chrg_online(dev);
+	charge_display_trace("online", charging);
 	if (charging <= 0 && pdata->auto_exit_charge) {
 		soc = fuel_gauge_update_get_soc(fg);
 		voltage = fuel_gauge_get_voltage(fg);
@@ -666,6 +699,7 @@ static int charge_animation_show(struct udevice *dev)
 	}
 
 	voltage = fuel_gauge_get_voltage(fg);
+	charge_display_trace("voltage", voltage);
 	if (voltage < 0) {
 		printf("get voltage failed: %d\n", voltage);
 		return -EINVAL;
@@ -675,6 +709,10 @@ static int charge_animation_show(struct udevice *dev)
 	if (voltage <= pdata->screen_on_voltage + 50) {
 		screen_on = false;
 		ever_lowpower_screen_off = true;
+		charge_show_bmp(NULL);
+	}
+	if (pdata->screen_off_at_start) {
+		screen_on = false;
 		charge_show_bmp(NULL);
 	}
 
@@ -693,6 +731,7 @@ static int charge_animation_show(struct udevice *dev)
 
 	charge_start = get_timer(0);
 	delta = get_timer(0);
+	charge_display_trace("entered", 1);
 
 	/* Charging ! */
 	while (1) {
@@ -767,12 +806,14 @@ static int charge_animation_show(struct udevice *dev)
 			/* Is able to boot now ? */
 			if (pdata->exit_charge_level &&
 			    soc >= pdata->exit_charge_level) {
+				charge_display_trace("auto-soc", soc);
 				printf("soc(%d%%) exit charge animation...\n",
 				       soc);
 				break;
 			}
 			if (pdata->exit_charge_voltage &&
 			    voltage >= pdata->exit_charge_voltage) {
+				charge_display_trace("auto-voltage", voltage);
 				printf("vol(%d) exit charge animation...\n",
 				       voltage);
 				break;
@@ -972,6 +1013,7 @@ show_images:
 
 			printf("screen %s\n", screen_on ? "on" : "off");
 		} else if (key_state == KEY_PRESS_LONG_DOWN) {
+			charge_display_trace("power-key", key_state);
 			/* Set screen_on=true anyway when key long pressed */
 			if (!screen_on)
 				screen_on = true;
@@ -1007,6 +1049,7 @@ show_images:
 
 		/* Step5: Exit by ctrl+c */
 		if (ctrlc()) {
+			charge_display_trace("ctrlc", 1);
 			if (voltage >= pdata->screen_on_voltage)
 				charge_show_logo();
 			printf("Exit charge, due to ctrl+c\n");
@@ -1084,6 +1127,7 @@ static int charge_animation_probe(struct udevice *dev)
 
 	/* Get PMIC: used for power off system  */
 	ret = uclass_get_device(UCLASS_PMIC, 0, &priv->pmic);
+	charge_display_trace("pmic", ret);
 	if (ret) {
 		if (ret == -ENODEV)
 			printf("Can't find PMIC\n");
@@ -1094,6 +1138,7 @@ static int charge_animation_probe(struct udevice *dev)
 
 	/* Get fuel gauge and charger(If need) */
 	ret = fg_charger_get_device(&priv->fg, &priv->charger);
+	charge_display_trace("gauge", ret);
 	if (ret) {
 		if (ret == -ENODEV)
 			debug("Can't find FG\n");
@@ -1112,13 +1157,16 @@ static int charge_animation_probe(struct udevice *dev)
 	}
 
 	/* Get PWRKEY: used for wakeup and turn off/on LCD */
-	if (!key_exist(KEY_POWER)) {
+	ret = key_exist(KEY_POWER);
+	charge_display_trace("key", ret);
+	if (!ret) {
 		debug("Can't find power key\n");
 		return -EINVAL;
 	}
 
 	/* Initialize charge current */
 	soc = fuel_gauge_update_get_soc(priv->fg);
+	charge_display_trace("soc", soc);
 	if (soc < 0 || soc > 100) {
 		debug("get soc failed: %d\n", soc);
 		return -EINVAL;
@@ -1126,10 +1174,19 @@ static int charge_animation_probe(struct udevice *dev)
 
 	/* Get leds */
 #ifdef CONFIG_LED
-	ret = led_get_by_label(LED_CHARGING_NAME, &priv->led_charging);
+	priv->led_soc = -1;
+	ret = charge_get_led(dev, "rockchip,charging-led", LED_CHARGING_NAME,
+			     &priv->led_charging);
+	charge_display_trace("led-low", ret);
+	if (ret && dev_read_prop(dev, "rockchip,charging-led", NULL))
+		return ret;
 	if (!ret)
 		printf("Found Charging LED\n");
-	ret = led_get_by_label(LED_CHARGING_FULL_NAME, &priv->led_full);
+	ret = charge_get_led(dev, "rockchip,charged-led", LED_CHARGING_FULL_NAME,
+			     &priv->led_full);
+	charge_display_trace("led-high", ret);
+	if (ret && dev_read_prop(dev, "rockchip,charged-led", NULL))
+		return ret;
 	if (!ret)
 		printf("Found Charging-Full LED\n");
 #endif

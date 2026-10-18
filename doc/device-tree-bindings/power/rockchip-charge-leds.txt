@@ -1,0 +1,30 @@
+Rockchip U-Boot charging LEDs
+============================
+
+Optional properties of a rockchip,uboot-charge node:
+
+- rockchip,charging-led: phandle to the ordinary charging LED.
+- rockchip,charged-led: phandle to the high-SOC charging LED. The physical
+  colour is board-specific (blue on NGP45H, possibly green on other boards).
+- rockchip,charged-led-min-soc: integer 1..100, default 100. Below this
+  threshold only charging-led is on; at/above it only charged-led is on.
+- rockchip,charge-leds-off-at-full: boolean; turn both LEDs off at SOC 100.
+  This uses reported SOC, not a separate hardware charge-termination flag.
+- rockchip,screen-off-at-start: boolean; enter charging with the screen off.
+  Short power-key presses can still toggle the charging screen.
+
+If a phandle is omitted, the existing labels battery_charging and battery_full
+are used. Without these properties the existing LED policy is unchanged:
+ordinary LED below 100%, full LED at 100%. An explicit invalid LED phandle
+causes charging-device probe to fail instead of silently selecting a different
+LED. Enable CONFIG_LED and CONFIG_LED_GPIO for gpio-leds nodes.
+
+Set rockchip,uboot-exit-charge-auto = <0> to stay in charging mode until a
+long power-key press (subject to the existing boot-mode, RTC-alarm and console
+escape handling). Unplugging the charger follows the existing PMIC shutdown
+path. Screen-off charging needs a periodic auto-wakeup-interval so the LEDs
+can track SOC while the CPU is suspended or in WFI.
+
+The NGP45H example is board/rockchip/evb_rk3562/ngp45h-charge.dtso. Its early
+charging DTB is separate from the Linux DTB selected by extlinux.conf.
+Do not copy NGP45H GPIO numbers or battery parameters to another board.

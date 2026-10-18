@@ -1543,6 +1543,10 @@ char *board_fdt_chosen_bootargs(void *fdt)
 	bootargs_add_dtb_dtbo(fdt, verbose);
 	bootargs_add_partition(verbose);
 	bootargs_add_fwver(verbose);
+#ifdef CONFIG_DM_CHARGE_DISPLAY
+	/* Add after extlinux has replaced bootargs, so diagnostics reach Linux. */
+	charge_display_add_bootargs();
+#endif
 	/* WARNING: Must be the last one to handle all "androidboot.xxx" property */
 	bootargs_add_android(verbose);
 

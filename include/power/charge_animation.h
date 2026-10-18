@@ -21,6 +21,9 @@ struct charge_animation_pdata {
 	int exit_charge_level;  /* lowest soc level allowed to exit charging */
 	int low_power_voltage;	/* below this voltage, force system into charge mode anyway */
 	int screen_on_voltage;	/* lowest voltage allowed to turn on screen */
+	int charged_led_min_soc; /* minimum SOC for the second charging LED */
+	bool charge_leds_off_at_full;
+	bool screen_off_at_start;
 
 	int system_suspend;	/* enter ATF system suspend, 1: enable, 0: disable */
 	int auto_wakeup_interval;/* timeout seconds to auto wakeup system */

@@ -1,0 +1,45 @@
+RK817 / RK809 optional DC detection in U-Boot
+============================================
+
+The battery child may specify dc_det_gpio, a single GPIO specifier with the
+board's active polarity. If absent there, the charger sibling is checked.
+Without either property, only the existing PMIC USB plug-in bit is used.
+
+Optional U-Boot properties on battery:
+
+  rockchip,charger-detect-source = "auto" or "pmic"
+    Default "auto" accepts the optional DC GPIO or the PMIC plug-in bit.
+    "pmic" ignores inherited dc_det_gpio on both battery and charger. Use it
+    when cable tests establish that the vendor GPIO is not a valid input.
+
+  rockchip,usb-input-init (boolean, RK817 only)
+    Disable OTG output using its write mask, then enable the power path and
+    charging input before checking online status, as the Linux RK817 charger
+    does. Preserve the existing voltage/current and termination settings.
+    Register read/write failures fail fuel-gauge probe. Default: no change.
+
+  rockchip,charger-detect-timeout-ms = <milliseconds>
+    Poll live input status every 10 ms on the first online query, stopping
+    immediately when asserted or when the timeout expires. Range 0..10000,
+    default 0. A timed-out or failed read never invents an online input.
+    Later queries are immediate so unplugging remains detectable.
+
+A present DC input is accepted for charger-online detection, charger-type
+selection and SOC charging updates even if the PMIC USB plug-in bit is clear.
+GPIO/I2C read errors are not treated as an asserted input. An explicitly
+configured GPIO that cannot be requested causes probe to fail visibly.
+
+Configure pinctrl on the battery node if the input requires pin muxing.
+Example, NGP45H only:
+
+    battery {
+        dc_det_gpio = <&gpio3 7 0>; /* GPIO3_A7, active high */
+        pinctrl-names = "default";
+        pinctrl-0 = <&ngp45h_dc_det_pins>;
+    };
+
+This detects input presence; it does not set battery voltage/current limits.
+
+Register reference: Rockchip RK817 Datasheet Rev 2.1, POWER_EN3 (0xb4),
+CHRG_OUT (0xe4), CHRG_TERM (0xe6) and SYS_STS (0xf0):
+https://rockchip.fr/RK817%20datasheet%20V2.1.pdf

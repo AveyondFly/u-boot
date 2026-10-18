@@ -1,0 +1,3 @@
+# Downloaded rkbin archives are verified against the pinned checksum.
+*.tar.gz
+*.part.*

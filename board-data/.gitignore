@@ -1,0 +1,3 @@
+# Device snapshots, diagnostics and flash backups stay local.
+*
+!.gitignore

@@ -9,6 +9,7 @@
  */
 
 #include <common.h>
+#include <clk.h>
 #include <dm.h>
 #include <dm/of_access.h>
 #include <syscon.h>
@@ -49,6 +50,9 @@
 
 struct rockchip_gpio_priv {
 	struct rockchip_gpio_regs *regs;
+#ifdef CONFIG_ROCKCHIP_RK3562
+	struct clk pclk;
+#endif
 	struct udevice *pinctrl;
 	int bank;
 	char name[2];
@@ -133,6 +137,17 @@ static int rockchip_gpio_probe(struct udevice *dev)
 	int id = -1, ret;
 
 	priv->regs = dev_read_addr_ptr(dev);
+#ifdef CONFIG_ROCKCHIP_RK3562
+	/* RK3562 loaders may leave unused GPIO banks clock-gated. */
+	ret = clk_get_by_index(dev, 0, &priv->pclk);
+	if (ret)
+		return ret;
+	ret = clk_enable(&priv->pclk);
+	if (ret) {
+		dev_err(dev, "failed to enable GPIO APB clock: %d\n", ret);
+		return ret;
+	}
+#endif
 	ret = uclass_get_device_by_seq(UCLASS_PINCTRL, 0, &priv->pinctrl);
 	if (ret) {
 		ret = uclass_first_device_err(UCLASS_PINCTRL, &priv->pinctrl);

@@ -7,6 +7,7 @@
 #include <common.h>
 #include <clk-uclass.h>
 #include <dm.h>
+#include <power/charge_display.h>
 #include <syscon.h>
 #include <asm/arch/clock.h>
 #include <asm/arch/cru_rk3562.h>
@@ -1714,7 +1715,46 @@ static int rk3562_clk_set_phase(struct clk *clk, int degrees)
 	return ret;
 }
 
+static int rk3562_clk_enable(struct clk *clk)
+{
+	struct rk3562_clk_priv *priv = dev_get_priv(clk->dev);
+	struct rk3562_cru *cru = priv->cru;
+
+	/* GPIO APB clocks must not depend on the loader's gate state. */
+	switch (clk->id) {
+	case PCLK_PMU0_GPIO0:
+		rk_clrreg(&cru->pmu0gate_con[0], BIT(14) | BIT(8) | BIT(9));
+		break;
+	case PCLK_PERI_GPIO1:
+	case PCLK_PERI_GPIO2:
+		rk_clrreg(&cru->perigate_con[1], BIT(2));
+		rk_clrreg(&cru->perigate_con[16], BIT(12));
+		rk_clrreg(&cru->perigate_con[17],
+			  BIT(clk->id - PCLK_PERI_GPIO1));
+		break;
+	case PCLK_GPIO3_VCCIO156:
+	case PCLK_GPIO4_VCCIO156:
+#ifndef CONFIG_SPL_BUILD
+		charge_display_trace("gpio-clk", clk->id);
+		charge_display_trace("gpio-gate0", readl(&cru->gate_con[26]));
+#endif
+		rk_clrreg(&cru->gate_con[18], BIT(2));
+		rk_clrreg(&cru->gate_con[25], BIT(5) | BIT(6));
+		rk_clrreg(&cru->gate_con[26], BIT(0) | BIT(1) |
+			  BIT(2 + clk->id - PCLK_GPIO3_VCCIO156));
+#ifndef CONFIG_SPL_BUILD
+		charge_display_trace("gpio-gate1", readl(&cru->gate_con[26]));
+#endif
+		break;
+	default:
+		return -ENOSYS;
+	}
+
+	return 0;
+}
+
 static struct clk_ops rk3562_clk_ops = {
+	.enable = rk3562_clk_enable,
 	.get_rate = rk3562_clk_get_rate,
 	.set_rate = rk3562_clk_set_rate,
 	.get_phase = rk3562_clk_get_phase,

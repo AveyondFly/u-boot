@@ -1,0 +1,72 @@
+// SPDX-License-Identifier: GPL-2.0+
+/* Apply to the NGP45H vendor Linux DTB, for U-Boot's early DTB only. */
+/dts-v1/;
+/plugin/;
+
+/ {
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			charging-leds {
+				compatible = "gpio-leds";
+				pinctrl-names = "default";
+				pinctrl-0 = <&ngp45h_charge_led_pins>;
+
+				ngp45h_charging: charging {
+					label = "battery_charging";
+					gpios = <&gpio3 18 0>; /* GPIO3_C2: red */
+					default-state = "off";
+				};
+
+				ngp45h_charged: charged {
+					label = "battery_full";
+					gpios = <&gpio3 17 0>; /* GPIO3_C1: blue */
+					default-state = "off";
+				};
+			};
+		};
+	};
+
+	fragment@1 {
+		target-path = "/pinctrl";
+		__overlay__ {
+			ngp45h-charge {
+				ngp45h_charge_led_pins: charge-led-pins {
+					rockchip,pins = <3 18 0 &pcfg_pull_none>,
+							<3 17 0 &pcfg_pull_none>;
+				};
+			};
+		};
+	};
+
+	fragment@2 {
+		target-path = "/charge-animation";
+		__overlay__ {
+			status = "okay";
+			rockchip,uboot-charge-on = <1>;
+			rockchip,android-charge-on = <0>;
+			rockchip,uboot-exit-charge-auto = <0>;
+			rockchip,uboot-exit-charge-level = <1>;
+			rockchip,uboot-exit-charge-voltage = <3350>;
+			rockchip,screen-off-at-start;
+			rockchip,charging-led = <&ngp45h_charging>;
+			rockchip,charged-led = <&ngp45h_charged>;
+			rockchip,charged-led-min-soc = <90>;
+			rockchip,charge-leds-off-at-full;
+			/* Periodic WFI wakeup refreshes SOC/LEDs with the screen off. */
+			rockchip,system-suspend = <0>;
+			rockchip,auto-wakeup-interval = <5>;
+			rockchip,auto-wakeup-screen-invert = <0>;
+		};
+	};
+
+	fragment@3 {
+		target-path = "/i2c@ff200000/pmic@20/battery";
+		__overlay__ {
+			/* GPIO3_A7 stays high in Linux even with the cable removed. */
+			rockchip,charger-detect-source = "pmic";
+			rockchip,usb-input-init;
+			rockchip,charger-detect-timeout-ms = <3000>;
+		};
+	};
+};
