@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "id": "pocket-ais",
+  "description": "Pocket AIS / RK817 / red and green charging LEDs",
+  "defconfig": "rk3562_pocket_ais_defconfig",
+  "dtb_mode": "embedded",
+  "dtb_path": "/rk3562-charge.dtb",
+  "required_kconfig": [
+    "IRQ",
+    "RK8XX_PWRKEY",
+    "PMIC_RK8XX",
+    "POWER_FG_RK817",
+    "LED_GPIO"
+  ],
+  "inputs": {
+    "linux_dtb": "linux-vendor.dtb",
+    "idb": "idb-original.bin",
+    "uboot": "uboot-original.img"
+  },
+  "overlays": [
+    "charge.dtso"
+  ],
+  "checks": [
+    {
+      "node": "/",
+      "property": "model",
+      "string": "Pocket AIS"
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20",
+      "property": "compatible",
+      "string": "rockchip,rk817"
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "charge_red_gpio",
+      "gpio_controller": "/pinctrl/gpio@ffac0000",
+      "pin": 1,
+      "flags": 0
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "charge_green_gpio",
+      "gpio_controller": "/pinctrl/gpio@ffac0000",
+      "pin": 0,
+      "flags": 0
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "design_capacity",
+      "cells": [
+        3675
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "design_qmax",
+      "cells": [
+        4042
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "bat_res",
+      "cells": [
+        107
+      ]
+    }
+  ],
+  "output_checks": [
+    {
+      "node": "/charging-leds/charging",
+      "property": "gpios",
+      "gpio_controller": "/pinctrl/gpio@ffac0000",
+      "pin": 1,
+      "flags": 0
+    },
+    {
+      "node": "/charging-leds/charged",
+      "property": "gpios",
+      "gpio_controller": "/pinctrl/gpio@ffac0000",
+      "pin": 0,
+      "flags": 0
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "rockchip,charger-detect-source",
+      "string": "pmic"
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "rockchip,usb-input-init",
+      "cells": []
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "rockchip,charger-detect-timeout-ms",
+      "cells": [
+        3000
+      ]
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,uboot-charge-on",
+      "cells": [
+        1
+      ]
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,uboot-exit-charge-auto",
+      "cells": [
+        0
+      ]
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,charged-led-min-soc",
+      "cells": [
+        90
+      ]
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,charge-leds-off-at-full",
+      "cells": []
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,screen-off-at-start",
+      "cells": []
+    }
+  ],
+  "control_dtb": {
+    "name": "rk3562-pocket-ais",
+    "power_init": "board-dtb",
+    "checks": [
+      {
+        "node": "/",
+        "property": "model",
+        "string": "Pocket AIS"
+      },
+      {
+        "node": "/chosen",
+        "property": "stdout-path",
+        "string": "/serial@ff210000"
+      },
+      {
+        "node": "/mmc@ff870000",
+        "property": "max-frequency",
+        "cells": [
+          200000000
+        ]
+      },
+      {
+        "node": "/mmc@ff870000",
+        "property": "bus-width",
+        "cells": [
+          8
+        ]
+      },
+      {
+        "node": "/mmc@ff880000",
+        "property": "vmmc-supply",
+        "absent": true
+      },
+      {
+        "node": "/mmc@ff880000",
+        "property": "vqmmc-supply",
+        "absent": true
+      },
+      {
+        "node": "/mmc@ff870000",
+        "property": "mmc-hs400-1_8v",
+        "cells": []
+      }
+    ]
+  }
+}

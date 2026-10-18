@@ -93,6 +93,46 @@ class BoardTests(unittest.TestCase):
         self.profile["inputs"] = {"linux_dts": "base.dts"}
         self.build(self.root / "out")
 
+    def test_pocket_ais_uses_its_red_green_wiring_and_battery_data(self):
+        profile_path = boards.PROFILES / "pocket-ais/board.json"
+        profile = boards.load_profile(profile_path)
+        source = self.data / "pocket.dts"
+        source.write_text('''/dts-v1/;
+/ {
+    model = "Pocket AIS";
+    compatible = "aislpc,pocket-ais", "rockchip,rk3562";
+    pinctrl {
+        gpio3: gpio@ffac0000 { gpio-controller; #gpio-cells = <2>; };
+        charge-led {
+            charge_led_gpio: charge-led-gpio { rockchip,pins = <3 0 0 0 3 1 0 0>; };
+        };
+    };
+    i2c@ff200000 {
+        pmic@20 {
+            compatible = "rockchip,rk817";
+            battery {
+                charge_red_gpio = <&gpio3 1 0>;
+                charge_green_gpio = <&gpio3 0 0>;
+                design_capacity = <3675>; design_qmax = <4042>; bat_res = <107>;
+            };
+        };
+    };
+    charge-animation { compatible = "rockchip,uboot-charge"; };
+};''')
+        dtb = self.data / "linux-vendor.dtb"
+        subprocess.run(["dtc", "-@", "-I", "dts", "-O", "dtb", "-o", str(dtb), str(source)],
+                       check=True, stderr=subprocess.DEVNULL)
+        output = self.root / "pocket-output"
+        with contextlib.redirect_stdout(io.StringIO()):
+            boards.build(profile, profile_path, self.data, output, "embedded", True)
+        battery = "/i2c@ff200000/pmic@20/battery"
+        self.assertEqual(boards.prop(output / "rk3562-charge.dtb", battery, "design_capacity"), "e5b")
+        # NGP45H's GPIO3_C2/C1 pair must never pass as Pocket AIS wiring.
+        subprocess.run(["fdtput", "-t", "x", str(dtb), battery, "charge_red_gpio",
+                        boards.prop(dtb, "/pinctrl/gpio@ffac0000", "phandle"), "12", "0"], check=True)
+        with self.assertRaisesRegex(ValueError, "board DTB mismatch"):
+            boards.build(profile, profile_path, self.data, output, "embedded", True)
+
     def test_mode_config_and_board_overrides(self):
         self.profile["kconfig"] = {"DEFAULT_DEVICE_TREE": "rk3562-custom", "POWER_FG_RK817": False}
         path = self.root / "config"

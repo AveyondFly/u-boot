@@ -3,8 +3,9 @@ RK3562 板级构建与关机充电
 
 1. 三种 DTB 的关系
 
-u-boot.dtb 是 U-Boot 自己的早期控制 DTB，已作为 FIT 的 fdt 节点打包在
-uboot.img 中；不用把单独的 u-boot.dtb 拷贝到 /flash。
+u-boot.dtb 是各机型独立生成的早期控制 DTB，已作为 FIT 的 fdt 节点打包在
+uboot.img 中；不用把单独的 u-boot.dtb 拷贝到 /flash。SPL 使用同一机型 DTS
+裁剪生成的 u-boot-spl.dtb。两台设备不再选择共用的 rk3562-evb 控制树。
 
 rk3562-charge.dtb 用于 U-Boot 初始化板级 PMIC、电量计、按键和充电灯。
 它以该板原厂 Linux DTB 为基础应用板级 overlay，与早期控制 DTB 分开管理。
@@ -27,6 +28,7 @@ uboot.img。内嵌 DTB 限制为 512 KiB，对应现有 U-Boot 分配的缓冲�
   ./build_uboot_rk3562_board.sh --list-boards
   ./build_uboot_rk3562_board.sh --board ngp45h
   ./build_uboot_rk3562_board.sh --board ngp45h --dtb-only
+  ./build_uboot_rk3562_board.sh --board pocket-ais
 
 兼容入口 ./build_uboot_rk3562_charge.sh 等价于选择 ngp45h，接受相同参数。
 原 build-rk3562-charge/ 中的旧产物保留，不会由新入口覆盖。
@@ -93,7 +95,9 @@ dtc、fdtoverlay、fdtget、Git、tar、curl 和指定交叉编译器。
 board.json 的主要字段：
   schema_version：目前为 1。
   id：小写字母/数字/_/-，与机型目录一致。
-  defconfig：共用或板级 U-Boot defconfig，位于 configs/。
+  defconfig：本机型独立的 U-Boot defconfig，位于 configs/，必须选择本机控制树。
+  control_dtb：name 指定早期 DTS 名称；power_init 明确电源初始化阶段；
+               checks 检查最终 U-Boot/SPL 控制 DTB 的型号、时钟和接口策略。
   inputs：linux_dtb、idb、uboot 三个输入文件名，相对于 --input-dir。
           linux_dtb 也可改为 linux_dts，接受反编译后的独立 DTS 文本。
   overlays：依次应用的 .dtso 文件，相对于 board.json 所在目录。
@@ -107,12 +111,13 @@ board.json 的主要字段：
   required_kconfig：该板必须实际启用的驱动，例如 PMIC、电量计、电源键驱动。
   source_overlay：可选源码目录，默认 source/，相对于 board.json 目录。
 
-如新板需要不同早期串口或存储配置，可以在
+各机型必须在
   source/arch/arm/dts/rk3562-your-board.dts
-放置板级 U-Boot DTS，再设置：
-  "kconfig": {"DEFAULT_DEVICE_TREE": "rk3562-your-board"}
-新增 DTS 可以引用共用 rk3562.dtsi / rk3562-evb.dts。源码补充仅复制到隔离的
-构建树，不会更改共用源码。PMIC 和电池参数仍应取自该板自己的原厂资料。
+放置板级 U-Boot DTS，在其独立 defconfig 中设置
+  CONFIG_DEFAULT_DEVICE_TREE="rk3562-your-board"
+并令 control_dtb.name 与之对应。构建器将本机充电 DTB 还原为带有符号标签的
+rk3562-your-board-vendor.dtsi，再应用机型 DTS 和共用的 U-Boot 阶段策略。
+不从其他机型或 EVB 复制电源、存储配置。源码补充仅复制到隔离构建树。
 
 linux_dts 输入应是可直接交给 dtc 的独立或已预处理 DTS；包含 Linux 源码
 #include 的 DTS 应先由对应 Linux 源码树预处理。overlay 若引用 &gpio3 等符号，
@@ -190,7 +195,7 @@ board-build.json 记录板号、DTB 模式、安装路径、输入 SHA-256、输
 6. GitHub Actions 与 Release
 
 .github/workflows/rk3562.yml 自动从 rk3562-profiles/*/board.json 生成设备矩阵，
-目前包含 ngp45h。每台设备独立下载自己的原厂输入、编译、验证并打包。
+目前包含 ngp45h 和 pocket-ais。每台设备独立下载自己的原厂输入、编译、验证并打包。
 默认 embedded 模式；手动运行时也可选 external。使用 Ubuntu 22.04 和
 Linaro GCC 6.3.1-2017.05 aarch64-linux-gnu，不依赖开发机的 /opt 路径。
 
@@ -255,3 +260,73 @@ uboot.img 是 U-Boot 分区镜像；rk3562-uboot-16m.bin 是从磁盘 sector 64 
 
 CI 辅助脚本回归测试：
   PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_ci_rk3562.py -v
+
+7. Pocket AIS 板级适配
+
+profile：board/rockchip/rk3562-profiles/pocket-ais/board.json。
+基于 Pocket AIS 自己的 rk3562-pocket-ais.dtb、RKNS IDB 和 U-Boot FIT 快照；
+其中 BL31 v1.21、BL32 v1.07 与 NGP45H 的固件版本不同，不共用输入包。
+DDR、BL31、BL32 在重建后逐字节检查，充电 DTB 默认内嵌。
+
+硬件配置从该机 DTB 保留：RK817、3675 mAh design_capacity、4042 mAh
+design_qmax、107 mOhm bat_res 以及原 OCV 表。红灯 GPIO3_A1，绿灯 GPIO3_A0，
+均为 GPIO_ACTIVE_HIGH。overlay 复用原 charge_led_gpio 的引脚配置。
+板级输入检查严格核对机型、PMIC、电池数据及两根充电 LED 接线；不能使用
+NGP45H 的 GPIO3_C2/C1 输入冒充此机型。
+
+没有 dc_det_gpio，使用 RK817 实时 USB 插入状态，并初始化输入充电路径。
+关机插电时保持关屏，只控制充电指示灯：90% 以下红灯、90%..99% 绿灯、
+100% 熄灯，每 5 秒从 WFI 唤醒刷新。按键退出充电沿用共用框架。
+本次适配只增加充电 LED 节点和充电策略，不改动原 LCD、风扇、Wi-Fi、
+音频及游戏按键配置，也不改写 Linux 使用的 DTB。
+
+Ports 更新器按设备树 model 精确匹配 Pocket AIS，选择 pocket-ais-uboot.bin。
+开发机可同时打包两台设备：
+  python3 scripts/package_rk3562_ports.py \
+    --build-dir /path/to/ngp45h/build --build-dir /path/to/pocket-ais/build
+
+构建及固件/DTB 静态校验已完成。关机插电、电源键退出、各电量灯色和满电
+熄灯仍需在此机实测；不能将 NGP45H 的实机验证当作 Pocket AIS 的验证记录。
+
+8. 独立 defconfig、控制 DTB 和电源初始化阶段
+
+每个机型由独立 board.json 绑定以下内容：
+  ngp45h：configs/rk3562_ngp45h_defconfig、rk3562-ngp45h.dts、NGP45H 输入包。
+  pocket-ais：configs/rk3562_pocket_ais_defconfig、rk3562-pocket-ais.dts、Pocket AIS 输入包。
+两个机型分别构建 SPL 控制 DTB、U-Boot 控制 fdt、内嵌充电 kern-fdt 和镜像。
+NGP45H 的早期 eMMC 上限为本机 DTB 中的 52 MHz，禁用 HS400；Pocket AIS
+保留本机 200 MHz、HS400 配置。串口选择与 CONFIG_DEBUG_UART_BASE 对应的 UART0。
+
+硬件数据以设备提取的 DTB 为基准，可对照 distribution 中对应 DTS；构建器
+恢复 __symbols__ 为 DTS 标签，保留原始属性和供电引用，不依赖 EVB 的 LDO 表。
+rk3562-profile-u-boot.dtsi 只定义 U-Boot 所需阶段标记、SCMI 安全时钟路径等。
+
+当前两台设备的 control_dtb.power_init 均为 board-dtb：
+  SPL：CONFIG_SPL_DM_PMIC/CONFIG_SPL_DM_REGULATOR 关闭；不重新设置 LDO。
+  早期 U-Boot：裁剪后的控制树中不保留 PMIC/regulator，不提前设置板级电压；
+    SD 先按原有 legacy-voltage 模式读取镜像和 DTB，不执行 UHS 电压切换。
+  board_init：init_kernel_dtb() 切换至本机 kern-fdt，然后初始化本机 regulator；
+    此后的电源、充电、LED 等均按本机数据执行。SPL 不会把 EVB LDO 值提前写死。
+新增板若需要更早的电压初始化，需为它实现对应阶段策略，不能只改 power_init
+字段绕过检查。
+
+构建新增验证：
+  检查实际 .config 选择本机 DEFAULT_DEVICE_TREE；SPL/U-Boot DTB 必须有本机 model。
+  检查 FIT 内 fdt 与 u-boot.dtb 完全相等，kern-fdt 与本机充电 DTB 完全相等。
+  对照原始 DTB，检查完整控制树及充电 DTB 的全部 regulator/IO domain 节点。
+    按目标节点路径解析 supply、GPIO、pinctrl、PWM 引用，避免 phandle 重编号误判。
+    电压范围、开关标志、GPIO、供电关系有任何变化即中止构建。
+  检查 board-dtb 策略下裁剪后的早期树没有 PMIC/regulator。
+
+产物增加 u-boot-spl.dtb、u-boot-control-full.dtb（裁剪前的完整控制树）和
+board-power.json（电源配置摘要与阶段策略）。上述文件同样纳入产物 SHA-256。
+
+这两份 RK3562 输入没有独立 io-voltage-domain 节点，CONFIG_IO_DOMAIN 保持
+关闭；当前没有增加 IO 电压选择寄存器写入，也没有套用 RK3568 的 IO domain
+驱动。这里验证的是板级配置及执行阶段，实际引脚电压仍需在硬件上核实。
+
+GitHub Actions 自动发现 board.json，在各自矩阵任务内选择其 defconfig、DTS
+和输入包。任一机型验证失败会使该次固件发布停止。
+
+专项测试：
+  PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_rk3562_control_dtb.py -v

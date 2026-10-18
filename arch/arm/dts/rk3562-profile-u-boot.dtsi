@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: GPL-2.0+
+/* U-Boot stage policy; all board hardware data comes from its own DTB. */
+#include <dt-bindings/clock/rk3562-cru.h>
+#include "rk3562-u-boot.dtsi"
+
+/ {
+	chosen {
+		stdout-path = &uart0;
+	};
+};
+
+&uart0 {
+	clock-frequency = <24000000>;
+	u-boot,dm-spl;
+	status = "okay";
+};
+
+/* The configured debug console is UART0, not the EVB UART2. */
+&uart2 {
+	status = "disabled";
+};
+
+/* Secure clocks must use the U-Boot SCMI path rather than Linux CRU ops. */
+&crypto {
+	clocks = <&scmi_clk CLK_CORE_CRYPTO>, <&scmi_clk CLK_PKA_CRYPTO>,
+		 <&scmi_clk ACLK_CRYPTO>, <&scmi_clk HCLK_CRYPTO>,
+		 <&scmi_clk PCLK_CRYPTO>;
+	assigned-clocks = <&scmi_clk CLK_CORE_CRYPTO>, <&scmi_clk CLK_PKA_CRYPTO>;
+	assigned-clock-rates = <200000000>, <300000000>;
+};
+
+&rng {
+	clocks = <&scmi_clk HCLK_RK_RNG_NS>;
+};
+
+&sdmmc0 {
+	/* Keep firmware-established supplies until init_kernel_dtb(). The
+	 * matching board DTB owns regulator setup and later MMC reinit.
+	 * Early SD access stays in the existing legacy-voltage mode.
+	 */
+	/delete-property/ vmmc-supply;
+	/delete-property/ vqmmc-supply;
+	/delete-property/ sd-uhs-sdr12;
+	/delete-property/ sd-uhs-sdr25;
+	/delete-property/ sd-uhs-sdr50;
+	/delete-property/ sd-uhs-sdr104;
+	/delete-property/ sd-uhs-ddr50;
+};

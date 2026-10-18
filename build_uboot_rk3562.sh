@@ -267,6 +267,11 @@ publish_images() {
 	install -m 0644 "${build_source}/fit/uboot.itb" "${OUT_DIR}/uboot.itb"
 	install -m 0644 "${build_source}/u-boot-nodtb.bin" "${OUT_DIR}/u-boot-nodtb.bin"
 	install -m 0644 "${build_source}/u-boot.dtb" "${OUT_DIR}/u-boot.dtb"
+	install -m 0644 "${build_source}/spl/u-boot-spl.dtb" "${OUT_DIR}/u-boot-spl.dtb"
+	local control_name
+	control_name="$(sed -n 's/^CONFIG_DEFAULT_DEVICE_TREE="\(.*\)"/\1/p' "${build_source}/.config")"
+	install -m 0644 "${build_source}/arch/arm/dts/${control_name}.dtb" \
+		"${OUT_DIR}/u-boot-control-full.dtb"
 	install -m 0644 "${build_source}/.config" "${OUT_DIR}/u-boot.config"
 	install -m 0644 "${build_source}/spl/u-boot-spl.bin" "${OUT_DIR}/u-boot-spl.bin"
 	ddr_relative="$(sed -n 's/^FlashData=//p' \

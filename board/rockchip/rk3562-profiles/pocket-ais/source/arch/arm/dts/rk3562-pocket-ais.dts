@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0+
+/dts-v1/;
+#include "rk3562-pocket-ais-vendor.dtsi"
+#include "rk3562-profile-u-boot.dtsi"
+
+&sdhci {
+	/* Preserve this board's eMMC clock and HS400 capabilities. */
+	max-frequency = <200000000>;
+	mmc-hs400-1_8v;
+	mmc-hs400-enhanced-strobe;
+};

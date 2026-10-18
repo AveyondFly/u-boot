@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: GPL-2.0+
+/* Pocket AIS charging only; keep its Linux peripherals and battery data. */
+/dts-v1/;
+/plugin/;
+
+/ {
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			charging-leds {
+				compatible = "gpio-leds";
+				pinctrl-names = "default";
+				/* Preserve the board's GPIO3_A0/A1 pin configuration. */
+				pinctrl-0 = <&charge_led_gpio>;
+
+				pocket_ais_charging: charging {
+					label = "battery_charging";
+					gpios = <&gpio3 1 0>; /* GPIO3_A1: red */
+					default-state = "off";
+				};
+
+				pocket_ais_charged: charged {
+					label = "battery_full";
+					gpios = <&gpio3 0 0>; /* GPIO3_A0: green */
+					default-state = "off";
+				};
+			};
+		};
+	};
+
+	fragment@1 {
+		target-path = "/charge-animation";
+		__overlay__ {
+			status = "okay";
+			rockchip,uboot-charge-on = <1>;
+			rockchip,android-charge-on = <0>;
+			rockchip,uboot-exit-charge-auto = <0>;
+			rockchip,uboot-exit-charge-level = <1>;
+			rockchip,uboot-exit-charge-voltage = <3350>;
+			rockchip,screen-off-at-start;
+			rockchip,charging-led = <&pocket_ais_charging>;
+			rockchip,charged-led = <&pocket_ais_charged>;
+			rockchip,charged-led-min-soc = <90>;
+			rockchip,charge-leds-off-at-full;
+			rockchip,system-suspend = <0>;
+			rockchip,auto-wakeup-interval = <5>;
+			rockchip,auto-wakeup-screen-invert = <0>;
+		};
+	};
+
+	fragment@2 {
+		target-path = "/i2c@ff200000/pmic@20/battery";
+		__overlay__ {
+			/* This board has no dc_det_gpio; use RK817 USB presence. */
+			rockchip,charger-detect-source = "pmic";
+			rockchip,usb-input-init;
+			rockchip,charger-detect-timeout-ms = <3000>;
+		};
+	};
+};

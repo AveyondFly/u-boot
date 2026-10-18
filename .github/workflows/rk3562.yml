@@ -90,7 +90,9 @@ jobs:
       - name: Run board regression tests
         run: |
           python3 scripts/test_rk3562_board.py -v
+          python3 scripts/test_rk3562_control_dtb.py -v
           python3 scripts/test_ci_rk3562.py -v
+          python3 scripts/test_rk3562_ports.py -v
       - name: Download vendor inputs
         env:
           GH_TOKEN: ${{ github.token }}

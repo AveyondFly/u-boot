@@ -17,6 +17,7 @@ import tempfile
 
 from extract_rk3562_fit_firmware import extract as extract_fit, integer, prop
 from extract_rockchip_rkns import extract as extract_idb
+from rk3562_control_dtb import power_configuration, read_tree, vendor_dtsi, verify_power_configuration
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILES = ROOT / "board/rockchip/rk3562-profiles"
@@ -68,6 +69,10 @@ def verify_snapshot(data_dir, board_id):
 def check_properties(dtb, checks):
     for check in checks:
         node, name = check["node"], check["property"]
+        if check.get("absent"):
+            if name in read_tree(dtb).get(node, {}):
+                raise ValueError(f"board DTB property must be absent: {node}:{name}")
+            continue
         if "string" in check:
             actual = prop(dtb, node, name, "s")
             expected = check["string"]
@@ -93,6 +98,7 @@ def prepare_dtb(profile, profile_dir, data_dir, stage):
     if "rockchip,rk3562" not in prop(base, "/", "compatible", "s").split():
         raise ValueError("base DTB is not compatible with rockchip,rk3562")
     check_properties(base, profile.get("checks", []))
+    shutil.copy2(base, stage / "vendor-base.dtb")
     overlays = []
     sources = [source]
     for index, name in enumerate(profile["overlays"]):
@@ -105,6 +111,7 @@ def prepare_dtb(profile, profile_dir, data_dir, stage):
     dtb = stage / "rk3562-charge.dtb"
     run("fdtoverlay", "-i", base, "-o", dtb, *overlays)
     check_properties(dtb, profile.get("output_checks", []))
+    verify_power_configuration(stage / "vendor-base.dtb", dtb)
     return dtb, overlays, sources
 
 
@@ -123,6 +130,9 @@ def render_config(profile, mode, path):
             raise ValueError("invalid Kconfig key: " + key)
         values[key] = ("y" if value else "n") if isinstance(value, bool) else (
             json.dumps(value) if isinstance(value, str) else str(value))
+    control = profile.get("control_dtb")
+    if control and values.get("DEFAULT_DEVICE_TREE") != json.dumps(control["name"]):
+        raise ValueError("board defconfig must select its own control_dtb.name")
     values.update({
         "ROCKCHIP_EARLY_DISTRO_DTB": "y" if mode == "external" else "n",
         "ROCKCHIP_EARLY_DISTRO_DTB_PATH": json.dumps(profile.get("dtb_path", "/rk3562-charge.dtb")),
@@ -140,6 +150,43 @@ def fit_payload(image, name):
     node = "/images/" + name
     offset, size = integer(image, node, "data-position"), integer(image, node, "data-size")
     return image.read_bytes()[offset:offset + size]
+
+
+def prepare_control_tree(profile, profile_dir, dtb, stage):
+    control = profile.get("control_dtb", {})
+    name = control.get("name", "")
+    if not re.fullmatch(r"rk3562-[a-z0-9][a-z0-9_-]*", name):
+        raise ValueError("full board builds require a board-specific control_dtb.name")
+    if control.get("power_init") != "board-dtb":
+        raise ValueError("unsupported early power policy")
+    source = profile_dir / profile.get("source_overlay", "source")
+    overlay = stage / "source-overlay"
+    shutil.copytree(source, overlay)
+    dts = overlay / "arch/arm/dts"
+    if not (dts / (name + ".dts")).is_file():
+        raise ValueError("board control DTS is missing: " + name)
+    vendor_dtsi(dtb, dts / (name + "-vendor.dtsi"))
+    policy = ROOT / "arch/arm/dts/rk3562-profile-u-boot.dtsi"
+    shutil.copy2(policy, dts / policy.name)
+    return overlay, policy
+
+
+def validate_control_tree(profile, artifacts):
+    control = profile["control_dtb"]
+    cfg = (artifacts / "u-boot.config").read_text()
+    if f'CONFIG_DEFAULT_DEVICE_TREE="{control["name"]}"\n' not in cfg:
+        raise ValueError("requested board control DTS did not survive Kconfig")
+    for symbol in ("SPL_DM_PMIC", "SPL_DM_REGULATOR"):
+        if f"CONFIG_{symbol}=y\n" in cfg:
+            raise ValueError("board-dtb power policy forbids early " + symbol)
+    for name in ("u-boot.dtb", "u-boot-spl.dtb"):
+        check_properties(artifacts / name, control["checks"])
+        if power_configuration(artifacts / name) or any(
+                b"rockchip,rk817" in node.get("compatible", b"")
+                for node in read_tree(artifacts / name).values()):
+            raise ValueError("board-dtb power policy forbids early PMIC/regulator nodes")
+    if fit_payload(artifacts / "uboot.img", "fdt") != (artifacts / "u-boot.dtb").read_bytes():
+        raise ValueError("FIT control fdt differs from this board's generated DTB")
 
 
 def build(profile, profile_path, data_dir, output, mode, dtb_only):
@@ -166,6 +213,8 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
             if source_tree.is_dir():
                 sources.extend(sorted(p for p in source_tree.rglob("*") if p.is_file()))
             if not dtb_only:
+                source_overlay, policy = prepare_control_tree(profile, profile_dir, dtb, stage)
+                sources.append(policy)
                 # Every full board build needs explicit vendor IDB and FIT.
                 # The backend's generic firmware fallbacks cannot leak into this path.
                 idb = input_file(data_dir, profile["inputs"]["idb"])
@@ -179,13 +228,12 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                 for key in ("DDR_BIN", "IDB_IMAGE", "BL31_BIN", "BL32_BIN", "EARLY_DTB", "SOURCE_OVERLAY"):
                     env.pop(key, None)
                 env.update({
-                    "DEFCONFIG": "rk3562_profile_defconfig", "DEFCONFIG_FILE": str(config),
+                    "DEFCONFIG": profile["defconfig"], "DEFCONFIG_FILE": str(config),
                     "IDB_IMAGE": str(idb), "BL31_BIN": str(stage / "firmware/rk3562_bl31_vendor.elf"),
                     "BL32_BIN": str(stage / "firmware/optee.bin"), "OUT_DIR": str(artifacts),
                     "CROSS_COMPILE": os.environ.get("CROSS_COMPILE", DEFAULT_CROSS),
                 })
-                if source_tree.is_dir():
-                    env["SOURCE_OVERLAY"] = str(source_tree)
+                env["SOURCE_OVERLAY"] = str(source_overlay)
                 if mode == "embedded":
                     env["EARLY_DTB"] = str(dtb)
                 with (stage / "build.log").open("w") as log:
@@ -195,6 +243,14 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                         print((stage / "build.log").read_text()[-12000:], file=sys.stderr)
                         raise
                 shutil.copy2(stage / "build.log", artifacts / "build.log")
+                validate_control_tree(profile, artifacts)
+                power = verify_power_configuration(stage / "vendor-base.dtb", dtb,
+                                                   artifacts / "u-boot-control-full.dtb")
+                power.update(control_dtb=profile["control_dtb"]["name"],
+                             power_init=profile["control_dtb"]["power_init"],
+                             io_domain_driver="CONFIG_IO_DOMAIN=y\n" in
+                             (artifacts / "u-boot.config").read_text())
+                (artifacts / "board-power.json").write_text(json.dumps(power, indent=2) + "\n")
                 extract_fit(artifacts / "uboot.img", stage / "rebuilt-firmware")
                 expected = (stage / "firmware/firmware.json").read_bytes()
                 if expected != (stage / "rebuilt-firmware/firmware.json").read_bytes():
@@ -230,7 +286,9 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                 "tracked_source_diff_sha256": hashlib.sha256(git_diff).hexdigest(),
                 "build_tools": {name: sha256(ROOT / name) for name in (
                     "scripts/build_rk3562_board.py", "build_uboot_rk3562.sh",
-                    "scripts/extract_rk3562_fit_firmware.py", "scripts/extract_rockchip_rkns.py")},
+                    "scripts/extract_rk3562_fit_firmware.py", "scripts/extract_rockchip_rkns.py",
+                    "scripts/rk3562_control_dtb.py")},
+                "control_dtb": profile.get("control_dtb"),
                 "dtb_install_path": profile.get("dtb_path", "/rk3562-charge.dtb") if mode == "external" else None,
                 "inputs": [{"path": str(path), "sha256": sha256(path)} for path in sources],
                 "artifacts": {p.name: sha256(p) for p in artifacts.iterdir() if p.is_file()},
