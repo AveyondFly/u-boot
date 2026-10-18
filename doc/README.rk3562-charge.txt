@@ -171,6 +171,8 @@ usb-input（e6）、power-en（b4）、powerpath（e4）、usb-mv（USB ADC 电�
 PMIC 检测配置下 dc-valid:0 是预期。on-src:64 是插电唤醒，源自 RK817
 Datasheet Rev 2.1 的 ON_SOURCE[6]，不是实时插入状态，不能用来替代拔线检测。
 这些记录用于定位，不会强制伪造“电源在线”或更改启动模式。
+当前 NGP45H Linux DTB 可不含 dc_det_gpio；该板选择 PMIC 检测后，不再强制
+校验此未使用的 GPIO 属性，红蓝灯的控制器、引脚及极性仍须与板级配置一致。
 
 主机回归测试：
   PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_rk3562_board.py -v
@@ -184,3 +186,72 @@ board-build.json 记录板号、DTB 模式、安装路径、输入 SHA-256、输
 生效配置，requested_defconfig 保存请求配置，build.log 保存完整编译日志。
 每次完整构建都检查固件 SHA、DDR 与 BL31/BL32 逐字节一致性；内嵌模式还从
 最终 FIT 取出 kern-fdt，核对与生成的充电 DTB 完全一致。
+
+6. GitHub Actions 与 Release
+
+.github/workflows/rk3562.yml 自动从 rk3562-profiles/*/board.json 生成设备矩阵，
+目前包含 ngp45h。每台设备独立下载自己的原厂输入、编译、验证并打包。
+默认 embedded 模式；手动运行时也可选 external。使用 Ubuntu 22.04 和
+Linaro GCC 6.3.1-2017.05 aarch64-linux-gnu，不依赖开发机的 /opt 路径。
+
+工具链下载先尝试原 releases.linaro.org 地址；该旧地址目前会跳转到联系页面，
+因此同时提供 Arm 官方 Legacy Linaro 镜像作为备用。两者均须符合固定 SHA-256：
+  26b45fdfb1656f94fa2b5117494f5d338b619c1f453ee3f3e1d84d79e90f2403
+工具链归档通过 Actions cache 缓存，每次使用前校验并重新解压。
+官方版本列表：
+  https://developer.arm.com/Downloads/-/Legacy%20Linaro%20GNU%20Toolchains
+
+首次配置原厂输入（每台设备执行一次）：
+
+  python3 scripts/ci_rk3562.py pack-inputs --board ngp45h \
+    --input-dir /path/to/verified/ngp45h
+
+生成 build-rk3562-inputs/ngp45h-inputs.tar.xz 及同名 .sha256 文件。
+输入目录需要含 board.json 指定的 DTB/DTS、IDB、U-Boot；已有 snapshot.json
+会先验证。打包只包含这三个输入和重新生成的 board_id/SHA-256 清单，不包含
+设备 IP、诊断日志或刷写备份。DTS 输入应自包含，不依赖目录外的 include 文件。
+
+将两个文件上传到本仓库独立的输入 Release，标签为 rk3562-inputs-v1。例如：
+
+  gh release create rk3562-inputs-v1 --target rk3562 \
+    --title "RK3562 vendor build inputs v1" --notes "Board-specific build inputs" \
+    --prerelease --latest=false \
+    build-rk3562-inputs/ngp45h-inputs.tar.xz \
+    build-rk3562-inputs/ngp45h-inputs.tar.xz.sha256
+
+输入 Release 的标签不会触发固件发布。未来新增设备时，将该设备的输入包和
+.sha256 文件追加到该输入 Release，即可由自动发现的设备矩阵构建。
+输入包先检查归档 SHA-256，再检查板号、文件清单和每个输入的 SHA-256。
+不接受归档中的链接或其他文件。输入下载失败或板级验证失败会中止该设备构建。
+
+可选 Repository variables（Settings -> Secrets and variables -> Actions）：
+  RK3562_INPUTS_TAG         输入 Release 标签，默认 rk3562-inputs-v1。
+  RK3562_INPUTS_REPOSITORY  输入 Release 所在 owner/repo，默认当前仓库。
+  RK3562_TOOLCHAIN_URL     同一份工具链 tar.xz 的自定义下载地址，仍校验固定 SHA。
+默认使用自动提供的 GITHUB_TOKEN，无需另配 PAT。同仓库私有 Release 也支持；
+其他仓库需允许当前 token 读取，公开输入仓库可直接读取。
+
+触发方式：
+  推送 rk3562 分支或向该分支提交 PR：编译所有已注册设备，保存 30 天 Artifact。
+  推送 rk3562-v* 标签（如 rk3562-v1.0.0）：全部设备构建成功后创建 GitHub Release。
+  Actions -> RK3562 U-Boot -> Run workflow：选择运行分支；boards 填 all，或
+    ngp45h 等逗号分隔板号；可选 DTB 模式。publish 默认关闭，勾选后会发布，
+    分支运行生成唯一标签 rk3562-build-<run_id>，标签运行使用当前标签。
+
+新 workflow 首次手动运行通常需要它先出现在默认分支；当前 rk3562 分支的
+push/tag 触发不受此限制。发布作业单独获取 contents:write；构建作业只读。
+仓库或组织策略需允许 Actions 发布 Release。失败构建保存控制台日志 7 天。
+
+每台设备发布两个文件：
+  rk3562-<board>-<embedded|external>-<commit前12位>.tar.xz
+  同名 .sha256
+
+解压目录内的 SHA256SUMS 可用 sha256sum -c SHA256SUMS 检查完整性。
+包含 uboot.img、idblock.img、rk3562-uboot-16m.bin、DTB、实际配置、编译日志、
+board-build.json 等完整产物。package 步骤会复核板号和构建时记录的产物哈希。
+uboot.img 是 U-Boot 分区镜像；rk3562-uboot-16m.bin 是从磁盘 sector 64 起
+写入的组合镜像，文件长度为 16 MiB - 32 KiB。具体写入位置应沿用设备已验证
+的流程。不同板号或硬件版本的输入和产物不可混用。
+
+CI 辅助脚本回归测试：
+  PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_ci_rk3562.py -v

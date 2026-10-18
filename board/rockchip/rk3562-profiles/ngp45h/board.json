@@ -15,13 +15,6 @@
   "checks": [
     {
       "node": "/i2c@ff200000/pmic@20/battery",
-      "property": "dc_det_gpio",
-      "gpio_controller": "/pinctrl/gpio@ffac0000",
-      "pin": 7,
-      "flags": 0
-    },
-    {
-      "node": "/i2c@ff200000/pmic@20/battery",
       "property": "charge_red_gpio",
       "gpio_controller": "/pinctrl/gpio@ffac0000",
       "pin": 18,

@@ -1,0 +1,174 @@
+name: RK3562 U-Boot
+
+on:
+  push:
+    branches: [rk3562]
+    tags: ['rk3562-v*']
+  pull_request:
+    branches: [rk3562]
+  workflow_dispatch:
+    inputs:
+      boards:
+        description: 'Board IDs, comma separated, or all'
+        default: all
+        type: string
+      dtb_mode:
+        description: Charging DTB mode
+        default: embedded
+        type: choice
+        options: [embedded, external]
+      publish:
+        description: Publish a GitHub Release after all builds succeed
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rk3562-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      dtb_mode: ${{ steps.matrix.outputs.dtb_mode }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select board profiles
+        id: matrix
+        env:
+          BOARDS: ${{ inputs.boards || 'all' }}
+          DTB_MODE: ${{ inputs.dtb_mode || 'embedded' }}
+        run: |
+          python3 scripts/ci_rk3562.py matrix --boards "$BOARDS" >> "$GITHUB_OUTPUT"
+          echo "dtb_mode=$DTB_MODE" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    env:
+      BOARD: ${{ matrix.board }}
+      DTB_MODE: ${{ needs.prepare.outputs.dtb_mode }}
+      INPUTS_TAG: ${{ vars.RK3562_INPUTS_TAG || 'rk3562-inputs-v1' }}
+      INPUTS_REPOSITORY: ${{ vars.RK3562_INPUTS_REPOSITORY || github.repository }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential curl device-tree-compiler flex git \
+            libssl-dev python3 python3-paramiko python3-pyelftools \
+            swig xz-utils
+      - name: Cache toolchain archive
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/rk3562-toolchain
+          key: linaro-6.3.1-2017.05-aarch64-26b45fdf-v1
+      - name: Install Linaro GCC 6.3.1
+        env:
+          TOOLCHAIN_URL: ${{ vars.RK3562_TOOLCHAIN_URL }}
+        run: |
+          bash scripts/ci_rk3562_toolchain.sh "$RUNNER_TEMP/rk3562-toolchain"
+          echo "CROSS_COMPILE=$RUNNER_TEMP/rk3562-toolchain/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-" >> "$GITHUB_ENV"
+      - name: Run board regression tests
+        run: |
+          python3 scripts/test_rk3562_board.py -v
+          python3 scripts/test_ci_rk3562.py -v
+      - name: Download vendor inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/vendor-download"
+          gh release download "$INPUTS_TAG" --repo "$INPUTS_REPOSITORY" \
+            --pattern "$BOARD-inputs.tar.xz" \
+            --pattern "$BOARD-inputs.tar.xz.sha256" \
+            --dir "$RUNNER_TEMP/vendor-download"
+          python3 scripts/ci_rk3562.py unpack-inputs --board "$BOARD" \
+            --archive "$RUNNER_TEMP/vendor-download/$BOARD-inputs.tar.xz" \
+            --output "$RUNNER_TEMP/vendor-inputs"
+      - name: Build U-Boot and verify board firmware
+        run: |
+          set -o pipefail
+          ./build_uboot_rk3562_board.sh --board "$BOARD" \
+            --input-dir "$RUNNER_TEMP/vendor-inputs" \
+            --dtb-mode "$DTB_MODE" \
+            --output "$RUNNER_TEMP/board-build" 2>&1 | tee "$RUNNER_TEMP/build-console.log"
+      - name: Package images, configuration and provenance
+        run: |
+          python3 scripts/ci_rk3562.py package --board "$BOARD" \
+            --build-dir "$RUNNER_TEMP/board-build" --output dist
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: rk3562-${{ matrix.board }}-${{ env.DTB_MODE }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload failed build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rk3562-${{ matrix.board }}-${{ env.DTB_MODE }}-failure
+          path: ${{ runner.temp }}/build-console.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  release:
+    needs: [prepare, build]
+    if: startsWith(github.ref, 'refs/tags/rk3562-v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rk3562-*
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+          DTB_MODE: ${{ needs.prepare.outputs.dtb_mode }}
+        run: |
+          tag="$REF_NAME"
+          if [[ "$REF_TYPE" != tag ]]; then
+            tag="rk3562-build-$RUN_ID"
+          fi
+          cat > release-notes.txt <<EOF
+          RK3562 U-Boot, built from $SOURCE_SHA.
+          Charging DTB mode: $DTB_MODE.
+
+          Each board has a separate archive and SHA-256 file. Archives contain
+          images, build logs, configuration and board-build.json provenance.
+          Use only the archive matching your exact board and hardware revision.
+          See doc/README.rk3562-charge.txt for image layout and DTB modes.
+          EOF
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --target "$SOURCE_SHA" \
+              --title "RK3562 U-Boot $tag" --notes-file release-notes.txt \
+              --draft --latest=false
+          fi
+          gh release upload "$tag" dist/* --clobber
+          gh release edit "$tag" --draft=false
