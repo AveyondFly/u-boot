@@ -274,7 +274,9 @@ push/tag 触发不受此限制。发布作业单独获取 contents:write；构�
 
 面向用户的统一安装包：
   rk3562-update-uboot-ports-YYYY-MM-DD-vX.Y.Z.zip
-  同名 .sha256
+
+正式 Release 只附这一个 Ports ZIP，用户无需选择机型或校验文件。
+独立机型构建包和校验文件保留在 Actions Artifacts 中。
 
 ZIP 根目录为 Update U-Boot.sh 和 uboot/；uboot 内含全部机型的组合镜像、
 精确 model 映射、更新程序、提示图片及构建/校验记录。下载后直接解压到
@@ -284,10 +286,10 @@ ZIP 根目录为 Update U-Boot.sh 和 uboot/；uboot 内含全部机型的组合
 
 embedded 构建完成后，ports 作业从各机型 Artifact 汇总镜像。它校验机型集合、
 同一提交/干净源码状态、镜像和校验报告 SHA-256、实际打包 SPL 和启动顺序，
-生成 ZIP 后保存为 rk3562-ports Artifact；release 作业再将 ZIP 和逐板构建包
-一起发布。普通分支构建也会生成 ZIP Artifact，便于先测试再打发布标签。
+生成 ZIP 及同名 .sha256 后保存为 rk3562-ports Artifact；release 作业校验
+ZIP 后只发布 ZIP。普通分支构建也会生成 ZIP Artifact，便于先测试再打发布标签。
 
-每台设备发布两个文件：
+每台设备的 Actions Artifact 保存两个文件：
   rk3562-<board>-<embedded|external>-YYYY-MM-DD-vX.Y.Z.tar.xz
   同名 .sha256
 

@@ -221,11 +221,6 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: rk3562-board-*
-          path: dist
-          merge-multiple: true
-      - uses: actions/download-artifact@v4
-        with:
           name: rk3562-ports
           path: dist
       - name: Publish release
@@ -239,6 +234,8 @@ jobs:
           DTB_MODE: ${{ needs.prepare.outputs.dtb_mode }}
         run: |
           tag="$RELEASE_TAG"
+          ports_zip="rk3562-update-uboot-ports-$RELEASE_DATE-v$RELEASE_VERSION.zip"
+          (cd dist && sha256sum -c "$ports_zip.sha256")
           cat > release-notes.txt <<EOF
           RK3562 U-Boot v$RELEASE_VERSION ($RELEASE_DATE).
           Charging DTB mode: $DTB_MODE.
@@ -249,10 +246,9 @@ jobs:
           The ZIP contains all supported boards. Updating is manual; the updater
           backs up the boot area and verifies the written image before reporting success.
 
-          Each board has a separate archive and SHA-256 file. Archives contain
-          images, build logs, configuration and board-build.json provenance.
-          Use only the archive matching your exact board and hardware revision.
-          See doc/README.rk3562-charge.txt for image layout and DTB modes.
+          This Ports ZIP is the only release download needed. Per-board build
+          archives and checksum files remain available in Actions Artifacts.
+          The ZIP includes checksums and build/validation records for all boards.
           Source revision: $SOURCE_SHA.
           EOF
           if gh release view "$tag" >/dev/null 2>&1; then
@@ -266,5 +262,5 @@ jobs:
               --title "RK3562 U-Boot v$RELEASE_VERSION ($RELEASE_DATE)" --notes-file release-notes.txt \
               --draft --latest=false
           fi
-          gh release upload "$tag" dist/* --clobber
+          gh release upload "$tag" "dist/$ports_zip" --clobber
           gh release edit "$tag" --draft=false --latest=true

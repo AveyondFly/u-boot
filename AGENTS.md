@@ -26,6 +26,9 @@ For RK3562 changes, follow `doc/README.rk3562-charge.txt` and these rules:
   Release is requested, publish the actual GitHub Release with its Ports ZIP;
   an Actions Artifact alone does not complete the request. Verify the published
   download before reporting success.
+- Attach only the combined Ports ZIP to firmware Releases. Keep per-board
+  archives and separate checksum files in Actions Artifacts; the ZIP includes
+  its own checksums and build/validation records.
 - Distinguish build checks from hardware tests. Record the device and tested
   scenarios; report TF1 boot, eMMC-only cold boot and charging tests separately.
 
