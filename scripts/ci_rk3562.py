@@ -12,6 +12,7 @@ import sys
 import tarfile
 
 from build_rk3562_board import PROFILES, ROOT, input_file, load_profile, sha256, verify_snapshot
+from rk3562_release import release_identity
 
 
 def profile_for(board):
@@ -106,7 +107,8 @@ def unpack_inputs(board, path, output):
         destination.write_bytes(data)
 
 
-def package(board, build_dir, output):
+def package(board, build_dir, output, version=None, release_date=None):
+    identity = release_identity(version, release_date)
     profile_for(board)
     metadata = json.loads((build_dir / "board-build.json").read_text())
     if metadata["board_id"] != board or metadata["dtb_only"]:
@@ -123,7 +125,7 @@ def package(board, build_dir, output):
             raise ValueError("build artifact checksum mismatch: " + name)
     files = {name: input_file(build_dir, name) for name in [*artifacts, "board-build.json"]}
     sums = "".join(f"{sha256(path)}  {name}\n" for name, path in sorted(files.items()))
-    stem = f"rk3562-{board}-{mode}-{commit[:12]}"
+    stem = f"rk3562-{board}-{mode}-{identity['release_date']}-v{identity['release_version']}"
     output.mkdir(parents=True, exist_ok=True)
     destination = output / (stem + ".tar.xz")
     with tarfile.open(destination, "w:xz") as archive:
@@ -151,6 +153,8 @@ def main():
     bundle.add_argument("--board", required=True)
     bundle.add_argument("--build-dir", type=Path, required=True)
     bundle.add_argument("--output", type=Path, required=True)
+    bundle.add_argument("--version", help="release version, default: RK3562_VERSION")
+    bundle.add_argument("--date", help="release date, default: current date in Asia/Shanghai")
     args = parser.parse_args()
     if args.command == "matrix":
         print("matrix=" + json.dumps(matrix(args.boards), separators=(",", ":")))
@@ -160,7 +164,7 @@ def main():
     elif args.command == "unpack-inputs":
         unpack_inputs(args.board, args.archive, args.output)
     else:
-        print(package(args.board, args.build_dir, args.output))
+        print(package(args.board, args.build_dir, args.output, args.version, args.date))
 
 
 if __name__ == "__main__":

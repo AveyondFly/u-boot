@@ -91,7 +91,8 @@ class CITests(unittest.TestCase):
                     "artifacts": {name: ci.sha256(build / name) for name in names}}
         record = build / "board-build.json"
         record.write_text(json.dumps(metadata))
-        archive = ci.package("ngp45h", build, self.root / "dist")
+        archive = ci.package("ngp45h", build, self.root / "dist", "1.2.3", "2026-10-19")
+        self.assertEqual(archive.name, "rk3562-ngp45h-embedded-2026-10-19-v1.2.3.tar.xz")
         with tarfile.open(archive) as bundle:
             self.assertEqual(len(bundle.getnames()), len(names) + 2)
             self.assertTrue(any(name.endswith("/SHA256SUMS") for name in bundle.getnames()))

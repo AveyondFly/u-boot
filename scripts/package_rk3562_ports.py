@@ -13,6 +13,7 @@ import tempfile
 import zipfile
 
 from build_rk3562_board import PROFILES, input_file
+from rk3562_release import release_identity
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -52,7 +53,9 @@ def sha256(path):
 
 
 def build_ports(build_dirs, destination, font, expected_boards=None,
-                require_all=False, source_commit=None, require_clean=False):
+                require_all=False, source_commit=None, require_clean=False,
+                version=None, release_date=None):
+    identity = release_identity(version, release_date)
     config = json.loads((ROOT / "tools/ports/uboot/devices.json").read_text())
     if config.get("schema_version") != 1:
         raise ValueError("unsupported Ports device configuration")
@@ -131,6 +134,7 @@ def build_ports(build_dirs, destination, font, expected_boards=None,
         package = dict(schema_version=1, boards=sorted(selected), source_commit=commit,
                        tracked_source_diff_sha256=diff,
                        contains_all_profiles=selected == profiles)
+        package.update(identity)
         (data / "package.json").write_text(json.dumps(package, indent=2) + "\n")
         screens(data / "screens", font)
         (stage / "Update U-Boot.sh").chmod(0o755)
@@ -151,11 +155,13 @@ def build_ports(build_dirs, destination, font, expected_boards=None,
 
 def archive_ports(directory, output):
     package = json.loads((directory / "uboot/package.json").read_text())
+    identity = release_identity(package.get("release_version"), package.get("release_date"))
     output = output.resolve()
     if output == directory.resolve() or output.is_relative_to(directory.resolve()):
         raise ValueError("archive output must be outside the Ports directory")
     output.mkdir(parents=True, exist_ok=True)
-    archive = output / ("rk3562-update-uboot-ports-" + package["source_commit"][:12] + ".zip")
+    archive = output / ("rk3562-update-uboot-ports-" + identity["release_date"] +
+                        "-v" + identity["release_version"] + ".zip")
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as bundle:
         for path in sorted(directory.rglob("*")):
             if path.is_file():
@@ -175,12 +181,15 @@ def main():
     parser.add_argument("--require-all", action="store_true", help="require every registered board profile")
     parser.add_argument("--source-commit", help="require this source commit")
     parser.add_argument("--require-clean", action="store_true", help="reject builds with tracked source changes")
+    parser.add_argument("--version", help="release version, default: RK3562_VERSION")
+    parser.add_argument("--date", help="release date, default: current date in Asia/Shanghai")
     parser.add_argument("--font", type=Path, default=Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"))
     args = parser.parse_args()
     builds = (args.build_dir if args.build_dir else
               [path.parent for path in sorted(args.build_root.glob("*/board-build.json"))])
     expected = args.expected_boards.split(",") if args.expected_boards is not None else None
-    build_ports(builds, args.output, args.font, expected, args.require_all, args.source_commit, args.require_clean)
+    build_ports(builds, args.output, args.font, expected, args.require_all, args.source_commit,
+                args.require_clean, args.version, args.date)
     print(args.output.resolve())
     if args.archive_dir:
         print(archive_ports(args.output, args.archive_dir))

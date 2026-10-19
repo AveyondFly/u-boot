@@ -21,6 +21,11 @@ For RK3562 changes, follow `doc/README.rk3562-charge.txt` and these rules:
 - Keep Ports archives extractable directly into `/roms/ports/`, with
   `Update U-Boot.sh` and `uboot/` at the archive root. Preserve runtime backups
   and logs when installing an update.
+- Name public firmware archives with the release date and version, never a
+  commit SHA. Use `RK3562_VERSION` or the version in the release tag. When a
+  Release is requested, publish the actual GitHub Release with its Ports ZIP;
+  an Actions Artifact alone does not complete the request. Verify the published
+  download before reporting success.
 - Distinguish build checks from hardware tests. Record the device and tested
   scenarios; report TF1 boot, eMMC-only cold boot and charging tests separately.
 

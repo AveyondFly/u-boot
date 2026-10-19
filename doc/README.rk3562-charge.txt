@@ -258,10 +258,13 @@ v2 中两台设备的启动固件均核对自原始 eMMC 快照；v1 的 NGP45H 
 
 触发方式：
   推送 rk3562 分支或向该分支提交 PR：编译所有已注册设备，保存 30 天 Artifact。
-  推送 rk3562-v* 标签（如 rk3562-v1.0.0）：全部设备构建成功后创建 GitHub Release。
+  推送版本标签（如 rk3562-v1.0.0-2026-10-19）：全部设备构建成功后创建正式
+    GitHub Release，并设为最新版本。也支持不带日期的 rk3562-v1.0.0，日期
+    默认取运行当天的北京时间。
   Actions -> RK3562 U-Boot -> Run workflow：选择运行分支；boards 填 all，或
     ngp45h 等逗号分隔板号；可选 DTB 模式。publish 默认关闭，勾选后会发布，
-    分支运行生成唯一标签 rk3562-build-<run_id>，标签运行使用当前标签。
+    version 可填 X.Y.Z；留空则读取 RK3562_VERSION。分支发布使用版本和日期
+    生成标签 rk3562-vX.Y.Z-YYYY-MM-DD，标签发布沿用所推送的版本标签。
     正式发布会固定 boards=all、dtb_mode=embedded；单机型/external 选项仅用于
     不发布的调试构建。任一机型失败或缺失，均不发布统一 Ports 包。
 
@@ -270,7 +273,7 @@ push/tag 触发不受此限制。发布作业单独获取 contents:write；构�
 仓库或组织策略需允许 Actions 发布 Release。失败构建保存控制台日志 7 天。
 
 面向用户的统一安装包：
-  rk3562-update-uboot-ports-<commit前12位>.zip
+  rk3562-update-uboot-ports-YYYY-MM-DD-vX.Y.Z.zip
   同名 .sha256
 
 ZIP 根目录为 Update U-Boot.sh 和 uboot/；uboot 内含全部机型的组合镜像、
@@ -285,12 +288,15 @@ embedded 构建完成后，ports 作业从各机型 Artifact 汇总镜像。它�
 一起发布。普通分支构建也会生成 ZIP Artifact，便于先测试再打发布标签。
 
 每台设备发布两个文件：
-  rk3562-<board>-<embedded|external>-<commit前12位>.tar.xz
+  rk3562-<board>-<embedded|external>-YYYY-MM-DD-vX.Y.Z.tar.xz
   同名 .sha256
 
 解压目录内的 SHA256SUMS 可用 sha256sum -c SHA256SUMS 检查完整性。
 包含 uboot.img、idblock.img、rk3562-uboot-16m.bin、DTB、实际配置、编译日志、
 board-build.json 等完整产物。package 步骤会复核板号和构建时记录的产物哈希。
+版本由 RK3562_VERSION、手动输入或发布标签确定，日期使用北京时间；日期和
+版本在 prepare 阶段统一后传给全部作业。SHA 只保留在构建记录内，不用于
+公开资产文件名。同一版本/日期已发布到其他提交时，会要求更新版本号。
 uboot.img 是 U-Boot 分区镜像；rk3562-uboot-16m.bin 是从磁盘 sector 64 起
 写入的组合镜像，文件长度为 16 MiB - 32 KiB。具体写入位置应沿用设备已验证
 的流程。不同板号或硬件版本的输入和产物不可混用。
@@ -387,6 +393,7 @@ GitHub Actions 自动发现 board.json，在各自矩阵任务内选择其 defco
 专项测试：
   PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_rk3562_control_dtb.py -v
   PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_package_rk3562_ports.py -v
+  PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_rk3562_release.py -v
 
 统一 Ports 包的本地构建示例：
   python3 scripts/package_rk3562_ports.py \

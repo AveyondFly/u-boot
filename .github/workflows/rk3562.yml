@@ -21,6 +21,10 @@ on:
         description: Publish all boards with embedded DTBs and a combined Ports ZIP
         default: false
         type: boolean
+      version:
+        description: 'Release version X.Y.Z; leave empty to use RK3562_VERSION'
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -40,6 +44,9 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       dtb_mode: ${{ steps.matrix.outputs.dtb_mode }}
       publish: ${{ steps.matrix.outputs.publish }}
+      release_version: ${{ steps.matrix.outputs.release_version }}
+      release_date: ${{ steps.matrix.outputs.release_date }}
+      release_tag: ${{ steps.matrix.outputs.release_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,6 +57,9 @@ jobs:
           BOARDS: ${{ inputs.boards || 'all' }}
           DTB_MODE: ${{ inputs.dtb_mode || 'embedded' }}
           PUBLISH_RELEASE: ${{ startsWith(github.ref, 'refs/tags/rk3562-v') || inputs.publish == true }}
+          RELEASE_VERSION: ${{ inputs.version || '' }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           if [[ "$PUBLISH_RELEASE" == true ]]; then
             BOARDS=all
@@ -58,6 +68,8 @@ jobs:
           python3 scripts/ci_rk3562.py matrix --boards "$BOARDS" >> "$GITHUB_OUTPUT"
           echo "dtb_mode=$DTB_MODE" >> "$GITHUB_OUTPUT"
           echo "publish=$PUBLISH_RELEASE" >> "$GITHUB_OUTPUT"
+          python3 scripts/rk3562_release.py --version "$RELEASE_VERSION" \
+            --ref-type "$REF_TYPE" --ref "$REF_NAME" >> "$GITHUB_OUTPUT"
 
   build:
     needs: prepare
@@ -72,6 +84,8 @@ jobs:
       INPUTS_TAG: ${{ vars.RK3562_INPUTS_TAG || 'rk3562-inputs-v2' }}
       INPUTS_REPOSITORY: ${{ vars.RK3562_INPUTS_REPOSITORY || github.repository }}
       PYTHONDONTWRITEBYTECODE: '1'
+      RELEASE_VERSION: ${{ needs.prepare.outputs.release_version }}
+      RELEASE_DATE: ${{ needs.prepare.outputs.release_date }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -100,6 +114,7 @@ jobs:
           python3 scripts/test_rk3562_control_dtb.py -v
           python3 scripts/test_ci_rk3562.py -v
           python3 scripts/test_rk3562_ports.py -v
+          python3 scripts/test_rk3562_release.py -v
       - name: Download vendor inputs
         env:
           GH_TOKEN: ${{ github.token }}
@@ -122,7 +137,8 @@ jobs:
       - name: Package images, configuration and provenance
         run: |
           python3 scripts/ci_rk3562.py package --board "$BOARD" \
-            --build-dir "$RUNNER_TEMP/board-build" --output dist
+            --build-dir "$RUNNER_TEMP/board-build" --output dist \
+            --version "$RELEASE_VERSION" --date "$RELEASE_DATE"
       - name: Upload release bundle
         uses: actions/upload-artifact@v4
         with:
@@ -157,6 +173,8 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       PYTHONDONTWRITEBYTECODE: '1'
+      RELEASE_VERSION: ${{ needs.prepare.outputs.release_version }}
+      RELEASE_DATE: ${{ needs.prepare.outputs.release_date }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -184,7 +202,8 @@ jobs:
           python3 scripts/package_rk3562_ports.py \
             --build-root "$RUNNER_TEMP/ports-inputs" \
             --expected-boards "$BOARDS" --source-commit "$GITHUB_SHA" --require-clean \
-            --output "$RUNNER_TEMP/ports-package" --archive-dir dist "${flags[@]}"
+            --output "$RUNNER_TEMP/ports-package" --archive-dir dist \
+            --version "$RELEASE_VERSION" --date "$RELEASE_DATE" "${flags[@]}"
       - name: Upload the installable Ports ZIP
         uses: actions/upload-artifact@v4
         with:
@@ -214,20 +233,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           SOURCE_SHA: ${{ github.sha }}
-          REF_TYPE: ${{ github.ref_type }}
-          REF_NAME: ${{ github.ref_name }}
-          RUN_ID: ${{ github.run_id }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.release_version }}
+          RELEASE_DATE: ${{ needs.prepare.outputs.release_date }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
           DTB_MODE: ${{ needs.prepare.outputs.dtb_mode }}
         run: |
-          tag="$REF_NAME"
-          if [[ "$REF_TYPE" != tag ]]; then
-            tag="rk3562-build-$RUN_ID"
-          fi
+          tag="$RELEASE_TAG"
           cat > release-notes.txt <<EOF
-          RK3562 U-Boot, built from $SOURCE_SHA.
+          RK3562 U-Boot v$RELEASE_VERSION ($RELEASE_DATE).
           Charging DTB mode: $DTB_MODE.
 
-          For installation, download rk3562-update-uboot-ports-*.zip and extract
+          For installation, download rk3562-update-uboot-ports-$RELEASE_DATE-v$RELEASE_VERSION.zip and extract
           its contents directly into /roms/ports/ (no extra enclosing folder).
           Run Update U-Boot from Ports; it selects the image for your DT model.
           The ZIP contains all supported boards. Updating is manual; the updater
@@ -237,11 +253,18 @@ jobs:
           images, build logs, configuration and board-build.json provenance.
           Use only the archive matching your exact board and hardware revision.
           See doc/README.rk3562-charge.txt for image layout and DTB modes.
+          Source revision: $SOURCE_SHA.
           EOF
-          if ! gh release view "$tag" >/dev/null 2>&1; then
+          if gh release view "$tag" >/dev/null 2>&1; then
+            existing_source="$(gh api "repos/$GH_REPO/commits/$tag" --jq .sha)"
+            if [[ "$existing_source" != "$SOURCE_SHA" ]]; then
+              echo "Release version already belongs to another revision; bump the version." >&2
+              exit 1
+            fi
+          else
             gh release create "$tag" --target "$SOURCE_SHA" \
-              --title "RK3562 U-Boot $tag" --notes-file release-notes.txt \
+              --title "RK3562 U-Boot v$RELEASE_VERSION ($RELEASE_DATE)" --notes-file release-notes.txt \
               --draft --latest=false
           fi
           gh release upload "$tag" dist/* --clobber
-          gh release edit "$tag" --draft=false
+          gh release edit "$tag" --draft=false --latest=true

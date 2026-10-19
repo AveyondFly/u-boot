@@ -1,7 +1,7 @@
 ROCKNIX Ports U-Boot updater
 ==========================
 
-从 GitHub Release 下载 rk3562-update-uboot-ports-<版本>.zip，将压缩包里的内容
+从 GitHub Release 下载 rk3562-update-uboot-ports-YYYY-MM-DD-vX.Y.Z.zip，将内容
 直接解压到 /roms/ports/，不要再套一层目录，然后刷新 Ports 游戏列表。
 包内包含本次发布支持的全部机型；运行 Update U-Boot 后自动选择本机镜像。
 重新解压覆盖同名程序/镜像即可更新安装包，保留原有 backups 和 logs 目录。

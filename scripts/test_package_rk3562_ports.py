@@ -67,9 +67,11 @@ class PackageTests(unittest.TestCase):
         path.write_text(json.dumps(metadata))
 
     def test_all_boards_archive_extracts_directly_into_ports(self):
-        metadata = self.build(require_all=True, require_clean=True, source_commit="a" * 40)
+        metadata = self.build(require_all=True, require_clean=True, source_commit="a" * 40,
+                              version="1.2.3", release_date="2026-10-19")
         self.assertEqual(metadata["boards"], sorted(self.boards))
         archive = package.archive_ports(self.output, self.root / "dist")
+        self.assertEqual(archive.name, "rk3562-update-uboot-ports-2026-10-19-v1.2.3.zip")
         self.assertTrue(Path(str(archive) + ".sha256").read_text().startswith(package.sha256(archive)))
         with zipfile.ZipFile(archive) as bundle:
             names = set(bundle.namelist())
