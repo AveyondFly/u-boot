@@ -22,6 +22,8 @@ class PackageTests(unittest.TestCase):
         source = self.root / "source"
         shutil.copytree(package.ROOT / "tools/ports", source / "tools/ports")
         self.config_path = source / "tools/ports/uboot/devices.json"
+        registered = {d["id"] for d in json.loads(self.config_path.read_text())["devices"]}
+        self.boards = ["ngp45h", "pocket-ais"] + sorted(registered - {"ngp45h", "pocket-ais"})
         patcher = patch.object(package, "ROOT", source)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -29,7 +31,7 @@ class PackageTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.builds = []
-        for board in ("ngp45h", "pocket-ais"):
+        for board in self.boards:
             build = self.root / board
             build.mkdir()
             image = build / "rk3562-uboot-16m.bin"
@@ -66,7 +68,7 @@ class PackageTests(unittest.TestCase):
 
     def test_all_boards_archive_extracts_directly_into_ports(self):
         metadata = self.build(require_all=True, require_clean=True, source_commit="a" * 40)
-        self.assertEqual(metadata["boards"], ["ngp45h", "pocket-ais"])
+        self.assertEqual(metadata["boards"], sorted(self.boards))
         archive = package.archive_ports(self.output, self.root / "dist")
         self.assertTrue(Path(str(archive) + ".sha256").read_text().startswith(package.sha256(archive)))
         with zipfile.ZipFile(archive) as bundle:
