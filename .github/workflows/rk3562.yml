@@ -69,7 +69,7 @@ jobs:
     env:
       BOARD: ${{ matrix.board }}
       DTB_MODE: ${{ needs.prepare.outputs.dtb_mode }}
-      INPUTS_TAG: ${{ vars.RK3562_INPUTS_TAG || 'rk3562-inputs-v1' }}
+      INPUTS_TAG: ${{ vars.RK3562_INPUTS_TAG || 'rk3562-inputs-v2' }}
       INPUTS_REPOSITORY: ${{ vars.RK3562_INPUTS_REPOSITORY || github.repository }}
       PYTHONDONTWRITEBYTECODE: '1'
     steps:

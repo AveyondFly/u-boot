@@ -203,6 +203,10 @@
           "cells": []
         }
       ]
+    },
+    "mmc_reference_sha256": {
+      "spl": "8eca9d8aad5fdb382f910873fc0e377506267f961312ef7e66f46f3ab23320a4",
+      "uboot": "e7ffa453e530d09e72c4042814ff0e90d97facacf66aa813fe384824d4c6caeb"
     }
   }
 }

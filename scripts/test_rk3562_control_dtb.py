@@ -16,7 +16,7 @@ import build_rk3562_board as boards
 from rk3562_control_dtb import power_configuration, read_tree, vendor_dtsi, verify_power_configuration
 from rk3562_mmc import (BOOT_MMC, extract_vendor_trees, validate_boot_storage,
                         verify_mmc_configuration, verify_packed_spl,
-                        write_mmc_include, write_spl_overlay)
+                        verify_vendor_references, write_mmc_include, write_spl_overlay)
 
 
 class ControlDTBTests(unittest.TestCase):
@@ -274,6 +274,15 @@ class BootMMCTests(unittest.TestCase):
         (artifacts / "u-boot-spl.bin").write_bytes(b"NEW-CODE" + self.spl.read_bytes())
         with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(ValueError, "different SPL"):
             verify_packed_spl(artifacts)
+
+    def test_debug_firmware_cannot_replace_the_pinned_vendor_reference(self):
+        references = {"spl": self.spl, "uboot": self.uboot}
+        control = {"mmc_reference_sha256": {stage: hashlib.sha256(path.read_bytes()).hexdigest()
+                                           for stage, path in references.items()}}
+        verify_vendor_references(control, references)
+        subprocess.run(["fdtput", str(self.uboot), BOOT_MMC[0], "mmc-hs400-1_8v"], check=True)
+        with self.assertRaisesRegex(ValueError, "vendor early DTB checksum mismatch: uboot"):
+            verify_vendor_references(control, references)
 
 
 if __name__ == "__main__":

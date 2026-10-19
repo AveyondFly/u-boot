@@ -20,7 +20,7 @@ from extract_rockchip_rkns import extract as extract_idb
 from rk3562_control_dtb import power_configuration, read_tree, vendor_dtsi, verify_power_configuration
 from rk3562_mmc import (extract_vendor_trees, validate_boot_storage,
                         verify_mmc_configuration, verify_packed_spl,
-                        write_mmc_include, write_spl_overlay)
+                        verify_vendor_references, write_mmc_include, write_spl_overlay)
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILES = ROOT / "board/rockchip/rk3562-profiles"
@@ -227,6 +227,7 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                 uboot = input_file(data_dir, profile["inputs"]["uboot"])
                 sources.extend([idb, uboot])
                 references = extract_vendor_trees(idb, uboot, stage / "vendor-boot")
+                verify_vendor_references(profile["control_dtb"], references)
                 source_overlay, policy = prepare_control_tree(profile, profile_dir, dtb, stage, references)
                 sources.append(policy)
                 extract_fit(uboot, stage / "firmware")

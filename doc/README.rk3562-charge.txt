@@ -100,6 +100,8 @@ board.json 的主要字段：
   control_dtb：name 指定早期 DTS 名称；power_init 明确电源初始化阶段；
                checks 检查最终 U-Boot/SPL 控制 DTB 的型号、时钟和接口策略。
                mmc_reference="vendor-boot" 从本机 IDB/FIT 提取早期参考；
+               mmc_reference_sha256 固定 spl/uboot 两份原始控制 DTB 的指纹，
+               防止误用 TF 调试版启动固件作为原厂参考；
                stage_checks 可分别约束 u-boot-spl.dtb 和 u-boot.dtb。
   inputs：linux_dtb、idb、uboot 三个输入文件名，相对于 --input-dir。
           linux_dtb 也可改为 linux_dts，接受反编译后的独立 DTS 文本。
@@ -232,21 +234,23 @@ Linaro GCC 6.3.1-2017.05 aarch64-linux-gnu，不依赖开发机的 /opt 路径�
 会先验证。打包只包含这三个输入和重新生成的 board_id/SHA-256 清单，不包含
 设备 IP、诊断日志或刷写备份。DTS 输入应自包含，不依赖目录外的 include 文件。
 
-将两个文件上传到本仓库独立的输入 Release，标签为 rk3562-inputs-v1。例如：
+将两个文件上传到本仓库独立的输入 Release，标签为 rk3562-inputs-v2。例如：
 
-  gh release create rk3562-inputs-v1 --target rk3562 \
-    --title "RK3562 vendor build inputs v1" --notes "Board-specific build inputs" \
+  gh release create rk3562-inputs-v2 --target rk3562 \
+    --title "RK3562 vendor build inputs v2" --notes "Board-specific build inputs" \
     --prerelease --latest=false \
     build-rk3562-inputs/ngp45h-inputs.tar.xz \
     build-rk3562-inputs/ngp45h-inputs.tar.xz.sha256
 
 输入 Release 的标签不会触发固件发布。未来新增设备时，将该设备的输入包和
 .sha256 文件追加到该输入 Release，即可由自动发现的设备矩阵构建。
+v2 中两台设备的启动固件均核对自原始 eMMC 快照；v1 的 NGP45H U-Boot 是
+当时 TF 上的调试版本，保留用于旧构建，不作为当前早期 MMC 对齐的参考。
 输入包先检查归档 SHA-256，再检查板号、文件清单和每个输入的 SHA-256。
 不接受归档中的链接或其他文件。输入下载失败或板级验证失败会中止该设备构建。
 
 可选 Repository variables（Settings -> Secrets and variables -> Actions）：
-  RK3562_INPUTS_TAG         输入 Release 标签，默认 rk3562-inputs-v1。
+  RK3562_INPUTS_TAG         输入 Release 标签，默认 rk3562-inputs-v2。
   RK3562_INPUTS_REPOSITORY  输入 Release 所在 owner/repo，默认当前仓库。
   RK3562_TOOLCHAIN_URL     同一份工具链 tar.xz 的自定义下载地址，仍校验固定 SHA。
 默认使用自动提供的 GITHUB_TOKEN，无需另配 PAT。同仓库私有 Release 也支持；

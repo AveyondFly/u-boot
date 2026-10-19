@@ -153,6 +153,16 @@ def extract_vendor_trees(idb, image, output):
     return {"spl": spl_dtb, "uboot": uboot_dtb}
 
 
+def verify_vendor_references(control, references):
+    expected = control.get("mmc_reference_sha256", {})
+    if set(expected) != {"spl", "uboot"}:
+        raise ValueError("board profile must pin its vendor SPL/U-Boot reference DTBs")
+    for stage, path in references.items():
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected[stage]:
+            raise ValueError("vendor early DTB checksum mismatch: " + stage +
+                             "; use this board's original eMMC input package")
+
+
 def write_mmc_include(base, reference, output):
     """Translate vendor boot phandles into the board's generated source tree."""
     tree, vendor = read_tree(base), read_tree(reference)
