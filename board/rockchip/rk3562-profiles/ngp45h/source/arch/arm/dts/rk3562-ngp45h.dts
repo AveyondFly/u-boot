@@ -3,15 +3,5 @@
 #include "rk3562-ngp45h-vendor.dtsi"
 #include "rk3562-profile-u-boot.dtsi"
 
-&sdhci {
-	/* This board's DTB limits eMMC to 52 MHz without HS400. */
-	max-frequency = <52000000>;
-	/delete-property/ mmc-hs400-1_8v;
-	/delete-property/ mmc-hs400-enhanced-strobe;
-	/delete-property/ fixed-emmc-driver-type;
-};
-
-&sdmmc0 {
-	/* NGP45H LDO5 is fixed at 3.3 V. */
-	no-1-8-v;
-};
+/* Boot storage follows this board's original U-Boot, not its Linux DTB. */
+#include "rk3562-ngp45h-mmc.dtsi"

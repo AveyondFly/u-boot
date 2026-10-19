@@ -1,6 +1,11 @@
 ROCKNIX Ports U-Boot updater
 ==========================
 
+从 GitHub Release 下载 rk3562-update-uboot-ports-<版本>.zip，将压缩包里的内容
+直接解压到 /roms/ports/，不要再套一层目录，然后刷新 Ports 游戏列表。
+包内包含本次发布支持的全部机型；运行 Update U-Boot 后自动选择本机镜像。
+重新解压覆盖同名程序/镜像即可更新安装包，保留原有 backups 和 logs 目录。
+
 安装位置：
   /roms/ports/Update U-Boot.sh
   /roms/ports/uboot/update_uboot.py
@@ -41,3 +46,5 @@ ROCKNIX Ports U-Boot updater
   python3 scripts/package_rk3562_ports.py --build-dir /path/to/verified/build
   可重复 --build-dir，将多个机型的构建一起放入同一安装目录。
   产物在 build-rk3562-ports/，可将内容复制到设备 /roms/ports/。
+  --require-all 检查是否包含全部机型；--archive-dir dist 同时生成可直接解压
+  安装的 ZIP 和同名 .sha256。正式 Release 总是打包全部机型的 embedded 镜像。

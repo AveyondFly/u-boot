@@ -18,6 +18,9 @@ import tempfile
 from extract_rk3562_fit_firmware import extract as extract_fit, integer, prop
 from extract_rockchip_rkns import extract as extract_idb
 from rk3562_control_dtb import power_configuration, read_tree, vendor_dtsi, verify_power_configuration
+from rk3562_mmc import (extract_vendor_trees, validate_boot_storage,
+                        verify_mmc_configuration, verify_packed_spl,
+                        write_mmc_include, write_spl_overlay)
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILES = ROOT / "board/rockchip/rk3562-profiles"
@@ -152,7 +155,7 @@ def fit_payload(image, name):
     return image.read_bytes()[offset:offset + size]
 
 
-def prepare_control_tree(profile, profile_dir, dtb, stage):
+def prepare_control_tree(profile, profile_dir, dtb, stage, references):
     control = profile.get("control_dtb", {})
     name = control.get("name", "")
     if not re.fullmatch(r"rk3562-[a-z0-9][a-z0-9_-]*", name):
@@ -168,6 +171,10 @@ def prepare_control_tree(profile, profile_dir, dtb, stage):
     vendor_dtsi(dtb, dts / (name + "-vendor.dtsi"))
     policy = ROOT / "arch/arm/dts/rk3562-profile-u-boot.dtsi"
     shutil.copy2(policy, dts / policy.name)
+    if control.get("mmc_reference") != "vendor-boot":
+        raise ValueError("boot storage requires the board's vendor early DTBs")
+    write_mmc_include(dtb, references["uboot"], dts / (name + "-mmc.dtsi"))
+    write_spl_overlay(references["uboot"], references["spl"], stage / "spl-mmc.dtbo")
     return overlay, policy
 
 
@@ -181,6 +188,7 @@ def validate_control_tree(profile, artifacts):
             raise ValueError("board-dtb power policy forbids early " + symbol)
     for name in ("u-boot.dtb", "u-boot-spl.dtb"):
         check_properties(artifacts / name, control["checks"])
+        check_properties(artifacts / name, control.get("stage_checks", {}).get(name, []))
         if power_configuration(artifacts / name) or any(
                 b"rockchip,rk817" in node.get("compatible", b"")
                 for node in read_tree(artifacts / name).values()):
@@ -213,25 +221,27 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
             if source_tree.is_dir():
                 sources.extend(sorted(p for p in source_tree.rglob("*") if p.is_file()))
             if not dtb_only:
-                source_overlay, policy = prepare_control_tree(profile, profile_dir, dtb, stage)
-                sources.append(policy)
                 # Every full board build needs explicit vendor IDB and FIT.
                 # The backend's generic firmware fallbacks cannot leak into this path.
                 idb = input_file(data_dir, profile["inputs"]["idb"])
                 uboot = input_file(data_dir, profile["inputs"]["uboot"])
                 sources.extend([idb, uboot])
+                references = extract_vendor_trees(idb, uboot, stage / "vendor-boot")
+                source_overlay, policy = prepare_control_tree(profile, profile_dir, dtb, stage, references)
+                sources.append(policy)
                 extract_fit(uboot, stage / "firmware")
                 extract_idb(idb, stage / "original-ddr.bin", 0)
                 config = stage / "board_defconfig"
                 sources.append(render_config(profile, mode, config))
                 env = os.environ.copy()
-                for key in ("DDR_BIN", "IDB_IMAGE", "BL31_BIN", "BL32_BIN", "EARLY_DTB", "SOURCE_OVERLAY"):
+                for key in ("DDR_BIN", "IDB_IMAGE", "BL31_BIN", "BL32_BIN", "EARLY_DTB", "SOURCE_OVERLAY", "SPL_DTB_OVERLAY"):
                     env.pop(key, None)
                 env.update({
                     "DEFCONFIG": profile["defconfig"], "DEFCONFIG_FILE": str(config),
                     "IDB_IMAGE": str(idb), "BL31_BIN": str(stage / "firmware/rk3562_bl31_vendor.elf"),
                     "BL32_BIN": str(stage / "firmware/optee.bin"), "OUT_DIR": str(artifacts),
                     "CROSS_COMPILE": os.environ.get("CROSS_COMPILE", DEFAULT_CROSS),
+                    "SPL_DTB_OVERLAY": str(stage / "spl-mmc.dtbo"),
                 })
                 env["SOURCE_OVERLAY"] = str(source_overlay)
                 if mode == "embedded":
@@ -244,6 +254,14 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                         raise
                 shutil.copy2(stage / "build.log", artifacts / "build.log")
                 validate_control_tree(profile, artifacts)
+                mmc = validate_boot_storage(references, artifacts)
+                mmc["packed_spl"] = verify_packed_spl(artifacts)
+                # The later board DTB must still keep all original interfaces,
+                # including TF2 or Wi-Fi and their own rail/power-sequence data.
+                mmc["board_dtb"] = verify_mmc_configuration(stage / "vendor-base.dtb", dtb)
+                (artifacts / "board-mmc.json").write_text(json.dumps(mmc, indent=2) + "\n")
+                for reference in references.values():
+                    shutil.copy2(reference, artifacts / reference.name)
                 power = verify_power_configuration(stage / "vendor-base.dtb", dtb,
                                                    artifacts / "u-boot-control-full.dtb")
                 power.update(control_dtb=profile["control_dtb"]["name"],
@@ -287,7 +305,7 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                 "build_tools": {name: sha256(ROOT / name) for name in (
                     "scripts/build_rk3562_board.py", "build_uboot_rk3562.sh",
                     "scripts/extract_rk3562_fit_firmware.py", "scripts/extract_rockchip_rkns.py",
-                    "scripts/rk3562_control_dtb.py")},
+                    "scripts/rk3562_control_dtb.py", "scripts/rk3562_mmc.py")},
                 "control_dtb": profile.get("control_dtb"),
                 "dtb_install_path": profile.get("dtb_path", "/rk3562-charge.dtb") if mode == "external" else None,
                 "inputs": [{"path": str(path), "sha256": sha256(path)} for path in sources],

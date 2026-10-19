@@ -170,10 +170,39 @@
         "absent": true
       },
       {
-        "node": "/mmc@ff870000",
-        "property": "mmc-hs400-1_8v",
-        "cells": []
+        "node": "/mmc@ff880000",
+        "property": "max-frequency",
+        "cells": [
+          150000000
+        ]
       }
-    ]
+    ],
+    "mmc_reference": "vendor-boot",
+    "stage_checks": {
+      "u-boot.dtb": [
+        {
+          "node": "/mmc@ff870000",
+          "property": "mmc-hs400-1_8v",
+          "cells": []
+        },
+        {
+          "node": "/mmc@ff870000",
+          "property": "mmc-hs400-enhanced-strobe",
+          "cells": []
+        }
+      ],
+      "u-boot-spl.dtb": [
+        {
+          "node": "/mmc@ff870000",
+          "property": "mmc-hs400-1_8v",
+          "cells": []
+        },
+        {
+          "node": "/mmc@ff870000",
+          "property": "mmc-hs400-enhanced-strobe",
+          "cells": []
+        }
+      ]
+    }
   }
 }

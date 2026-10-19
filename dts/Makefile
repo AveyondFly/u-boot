@@ -39,6 +39,11 @@ quiet_cmd_fdtgrep = FDTGREP $@
         $(objtree)/tools/fdtgrep -r -O dtb - -o $@ \
                 $(addprefix -P ,$(subst $\",,$(CONFIG_OF_SPL_REMOVE_PROPS)))
 
+# Optional stage-specific properties, applied before SPL is linked and packed.
+spl_dtb_overlay = $(if $(SPL_DTB_OVERLAY),&& fdtoverlay -i $@ -o $@ $(SPL_DTB_OVERLAY))
+quiet_cmd_fdtgrep_spl = FDTGREP $@
+      cmd_fdtgrep_spl = $(cmd_fdtgrep) $(spl_dtb_overlay)
+
 quiet_cmd_fdtgrep_uboot = FDTGREP $@
       cmd_fdtgrep_uboot = $(objtree)/tools/fdtgrep $(fdtgrep_props) -RT $< \
 		-n /chosen -n /config -O dtb | \
@@ -57,17 +62,17 @@ quiet_cmd_fdtgrep_spl_minimum = FDTGREP $@
       cmd_fdtgrep_spl_minimum = $(objtree)/tools/fdtgrep $(fdtgrep_spl_minimum_props) -RT $< \
                 -n /chosen -n config -O dtb | \
         $(objtree)/tools/fdtgrep -r -O dtb - -o $@ \
-                $(addprefix -P ,$(subst $\",,$(CONFIG_OF_SPL_REMOVE_PROPS)))
+                $(addprefix -P ,$(subst $\",,$(CONFIG_OF_SPL_REMOVE_PROPS))) $(spl_dtb_overlay)
 
 $(obj)/dt-tpl.dtb: $(DTB) $(objtree)/tools/fdtgrep FORCE
 	$(call if_changed,fdtgrep_tpl)
 
 ifeq ($(CONFIG_SPL_DTB_MINIMUM),y)
-$(obj)/dt-spl.dtb: $(DTB) $(objtree)/tools/fdtgrep FORCE
+$(obj)/dt-spl.dtb: $(DTB) $(objtree)/tools/fdtgrep $(SPL_DTB_OVERLAY) FORCE
 	$(call if_changed,fdtgrep_spl_minimum)
 else
-$(obj)/dt-spl.dtb: $(DTB) $(objtree)/tools/fdtgrep FORCE
-	$(call if_changed,fdtgrep)
+$(obj)/dt-spl.dtb: $(DTB) $(objtree)/tools/fdtgrep $(SPL_DTB_OVERLAY) FORCE
+	$(call if_changed,fdtgrep_spl)
 endif
 
 # Normally, usbplug is enabled with kernel dtb disabled

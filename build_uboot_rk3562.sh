@@ -227,7 +227,9 @@ build_images() {
 		export RKBIN
 		export RKBIN_TOOLS="${RKBIN}/tools"
 		export PYTHON JOBS
-		./make.sh "${DEFCONFIG%_defconfig}" --spl \
+		# FIT packaging needs --spl-new; --spl alone is not forwarded to fit.sh
+		# and would silently package rkbin's prebuilt SPL instead of this build.
+		./make.sh "${DEFCONFIG%_defconfig}" --spl-new \
 			"${loader_ini}" "${trust_ini}" \
 			"CROSS_COMPILE=${CROSS_COMPILE}"
 	)

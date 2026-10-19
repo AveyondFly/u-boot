@@ -5,7 +5,8 @@ RK3562 板级构建与关机充电
 
 u-boot.dtb 是各机型独立生成的早期控制 DTB，已作为 FIT 的 fdt 节点打包在
 uboot.img 中；不用把单独的 u-boot.dtb 拷贝到 /flash。SPL 使用同一机型 DTS
-裁剪生成的 u-boot-spl.dtb。两台设备不再选择共用的 rk3562-evb 控制树。
+裁剪生成的 u-boot-spl.dtb，再应用原厂 SPL 的 MMC 阶段差异。两台设备不再
+选择共用的 rk3562-evb 控制树。
 
 rk3562-charge.dtb 用于 U-Boot 初始化板级 PMIC、电量计、按键和充电灯。
 它以该板原厂 Linux DTB 为基础应用板级 overlay，与早期控制 DTB 分开管理。
@@ -98,6 +99,8 @@ board.json 的主要字段：
   defconfig：本机型独立的 U-Boot defconfig，位于 configs/，必须选择本机控制树。
   control_dtb：name 指定早期 DTS 名称；power_init 明确电源初始化阶段；
                checks 检查最终 U-Boot/SPL 控制 DTB 的型号、时钟和接口策略。
+               mmc_reference="vendor-boot" 从本机 IDB/FIT 提取早期参考；
+               stage_checks 可分别约束 u-boot-spl.dtb 和 u-boot.dtb。
   inputs：linux_dtb、idb、uboot 三个输入文件名，相对于 --input-dir。
           linux_dtb 也可改为 linux_dts，接受反编译后的独立 DTS 文本。
   overlays：依次应用的 .dtso 文件，相对于 board.json 所在目录。
@@ -118,6 +121,19 @@ board.json 的主要字段：
 并令 control_dtb.name 与之对应。构建器将本机充电 DTB 还原为带有符号标签的
 rk3562-your-board-vendor.dtsi，再应用机型 DTS 和共用的 U-Boot 阶段策略。
 不从其他机型或 EVB 复制电源、存储配置。源码补充仅复制到隔离构建树。
+本机 DTS 在共用阶段策略之后包含 rk3562-your-board-mmc.dtsi；构建器会从
+本机原厂 U-Boot 控制 DTB 生成它，并独立恢复 SPL 的阶段差异。
+
+新设备继续采用以下流程：
+  1. 保存本机原始 Linux DTB、eMMC IDB 和 U-Boot FIT，只读提取并记录 SHA-256。
+  2. 独立配置本机供电、电池和充电灯；eMMC/TF1 的时钟、引脚、模式以原厂
+     同一阶段的控制 DTB 为参考，不用 Linux 配置直接替代。
+  3. 保持 TF1 优先，未插 TF1 时可从 eMMC 启动；不为此新增 TF2/Wi-Fi 初始化。
+  4. 验证最终 IDB 确实包含本次编译的 SPL/DTB，DDR/BL31/BL32 与本机原始
+     payload 一致。记录 TF1、无 TF 的 eMMC 冷启动及充电实测结果。
+  5. 在 tools/ports/uboot/devices.json 注册本机精确 model，并上传输入包至
+     CI 输入 Release。正式 Ports 包会自动汇总全部已登记机型。
+仓库 AGENTS.md 同步约定了这些规则。
 
 linux_dts 输入应是可直接交给 dtc 的独立或已预处理 DTS；包含 Linux 源码
 #include 的 DTS 应先由对应 Linux 源码树预处理。overlay 若引用 &gpio3 等符号，
@@ -242,10 +258,27 @@ Linaro GCC 6.3.1-2017.05 aarch64-linux-gnu，不依赖开发机的 /opt 路径�
   Actions -> RK3562 U-Boot -> Run workflow：选择运行分支；boards 填 all，或
     ngp45h 等逗号分隔板号；可选 DTB 模式。publish 默认关闭，勾选后会发布，
     分支运行生成唯一标签 rk3562-build-<run_id>，标签运行使用当前标签。
+    正式发布会固定 boards=all、dtb_mode=embedded；单机型/external 选项仅用于
+    不发布的调试构建。任一机型失败或缺失，均不发布统一 Ports 包。
 
 新 workflow 首次手动运行通常需要它先出现在默认分支；当前 rk3562 分支的
 push/tag 触发不受此限制。发布作业单独获取 contents:write；构建作业只读。
 仓库或组织策略需允许 Actions 发布 Release。失败构建保存控制台日志 7 天。
+
+面向用户的统一安装包：
+  rk3562-update-uboot-ports-<commit前12位>.zip
+  同名 .sha256
+
+ZIP 根目录为 Update U-Boot.sh 和 uboot/；uboot 内含全部机型的组合镜像、
+精确 model 映射、更新程序、提示图片及构建/校验记录。下载后直接解压到
+/roms/ports/，刷新 Ports 列表后运行 Update U-Boot 即可；无需用户选板号。
+覆盖安装包时保留已有 uboot/backups/ 和 uboot/logs/。包内不包含这些运行目录。
+安装包只会更新 /flash 所在磁盘的启动区，不会自动重启或迁移系统到 eMMC。
+
+embedded 构建完成后，ports 作业从各机型 Artifact 汇总镜像。它校验机型集合、
+同一提交/干净源码状态、镜像和校验报告 SHA-256、实际打包 SPL 和启动顺序，
+生成 ZIP 后保存为 rk3562-ports Artifact；release 作业再将 ZIP 和逐板构建包
+一起发布。普通分支构建也会生成 ZIP Artifact，便于先测试再打发布标签。
 
 每台设备发布两个文件：
   rk3562-<board>-<embedded|external>-<commit前12位>.tar.xz
@@ -294,17 +327,26 @@ Ports 更新器按设备树 model 精确匹配 Pocket AIS，选择 pocket-ais-ub
   ngp45h：configs/rk3562_ngp45h_defconfig、rk3562-ngp45h.dts、NGP45H 输入包。
   pocket-ais：configs/rk3562_pocket_ais_defconfig、rk3562-pocket-ais.dts、Pocket AIS 输入包。
 两个机型分别构建 SPL 控制 DTB、U-Boot 控制 fdt、内嵌充电 kern-fdt 和镜像。
-NGP45H 的早期 eMMC 上限为本机 DTB 中的 52 MHz，禁用 HS400；Pocket AIS
-保留本机 200 MHz、HS400 配置。串口选择与 CONFIG_DEBUG_UART_BASE 对应的 UART0。
+启动存储配置从各机型自己的原始 IDB/FIT 提取，不用 Linux DTB 代替早期控制
+DTB。两台原始 SPL DTB 中，eMMC 都为 8 位、200 MHz 上限、HS400/增强选通；
+原始 U-Boot DTB 中，NGP45H 不声明 HS400，Pocket AIS 保留 HS400/增强选通。
+两阶段都保留 fixed-emmc-driver-type = <1>。TF1 上限均为 150 MHz，引脚复用、
+上下拉和驱动强度均与对应阶段的原始控制 DTB 对比。频率上限不等于实际协商
+频率。串口仍选择与 CONFIG_DEBUG_UART_BASE 对应的本机 UART0。
 
 硬件数据以设备提取的 DTB 为基准，可对照 distribution 中对应 DTS；构建器
 恢复 __symbols__ 为 DTS 标签，保留原始属性和供电引用，不依赖 EVB 的 LDO 表。
-rk3562-profile-u-boot.dtsi 只定义 U-Boot 所需阶段标记、SCMI 安全时钟路径等。
+rk3562-profile-u-boot.dtsi 定义 U-Boot 所需阶段标记、SCMI 安全时钟路径等。
+其后生成的 <机型>-mmc.dtsi 用原厂 U-Boot 控制 DTB 覆盖 eMMC/TF1 配置，
+重新映射 phandle，并保留原厂引脚参数。SPL_DTB_OVERLAY 在 SPL 打包前恢复
+本机原厂 SPL 与 U-Boot 的阶段差异。目前仅允许原厂 HS400 属性的增补，其他
+阶段差异必须显式实现后才允许构建。
 
 当前两台设备的 control_dtb.power_init 均为 board-dtb：
   SPL：CONFIG_SPL_DM_PMIC/CONFIG_SPL_DM_REGULATOR 关闭；不重新设置 LDO。
   早期 U-Boot：裁剪后的控制树中不保留 PMIC/regulator，不提前设置板级电压；
-    SD 先按原有 legacy-voltage 模式读取镜像和 DTB，不执行 UHS 电压切换。
+    原厂两阶段控制 DTB 同样没有 PMIC/regulator 或 MMC supply 引用；早期
+    eMMC/TF1 沿用前级供电，不新增 SD UHS 电压切换流程。
   board_init：init_kernel_dtb() 切换至本机 kern-fdt，然后初始化本机 regulator；
     此后的电源、充电、LED 等均按本机数据执行。SPL 不会把 EVB LDO 值提前写死。
 新增板若需要更早的电压初始化，需为它实现对应阶段策略，不能只改 power_init
@@ -317,9 +359,19 @@ rk3562-profile-u-boot.dtsi 只定义 U-Boot 所需阶段标记、SCMI 安全时�
     按目标节点路径解析 supply、GPIO、pinctrl、PWM 引用，避免 phandle 重编号误判。
     电压范围、开关标志、GPIO、供电关系有任何变化即中止构建。
   检查 board-dtb 策略下裁剪后的早期树没有 PMIC/regulator。
+  检查早期只保留 eMMC 和 TF1；别名为 mmc0=eMMC、mmc1=TF1，SPL 的读取
+    顺序为 TF1、eMMC。TF1 无卡或无法加载有效镜像时，沿用 SPL 的回退机制。
+  对照原厂同一阶段 DTB，检查全部 MMC 属性、引用的时钟/复位参数和引脚配置。
+  打包必须使用 --spl-new；单独 --spl 不会传递到 FIT 打包器，后者会使用
+    rkbin 自带的通用 SPL。构建从最终 IDB 再次提取 SPL，与本次编译的 SPL
+    逐字节比较（仅允许尾部对齐补零），并确认其内包含本机 SPL 控制 DTB。
 
 产物增加 u-boot-spl.dtb、u-boot-control-full.dtb（裁剪前的完整控制树）和
 board-power.json（电源配置摘要与阶段策略）。上述文件同样纳入产物 SHA-256。
+另增加 vendor-spl-control.dtb、vendor-uboot-control.dtb、packed-spl.bin、
+board-mmc.json，记录原始参考、实际打包的 SPL 和各阶段的 MMC 校验结果。
+后续充电 DTB 保留本机 Linux 的 TF2/Wi-Fi 与供电配置，不为它们增加早期初始化。
+这些是编译和静态校验结果；拔 TF 后的 eMMC 冷启动、插 TF 的优先启动仍需实测。
 
 这两份 RK3562 输入没有独立 io-voltage-domain 节点，CONFIG_IO_DOMAIN 保持
 关闭；当前没有增加 IO 电压选择寄存器写入，也没有套用 RK3568 的 IO domain
@@ -330,3 +382,15 @@ GitHub Actions 自动发现 board.json，在各自矩阵任务内选择其 defco
 
 专项测试：
   PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_rk3562_control_dtb.py -v
+  PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_package_rk3562_ports.py -v
+
+统一 Ports 包的本地构建示例：
+  python3 scripts/package_rk3562_ports.py \
+    --build-dir build-rk3562-mmc-aligned/ngp45h \
+    --build-dir build-rk3562-mmc-aligned/pocket-ais \
+    --require-all --output build-rk3562-ports-release --archive-dir dist
+CI 可用 --build-root 自动发现下载目录中的逐机型 Artifact，使用
+--expected-boards/--source-commit/--require-clean 严格检查本次矩阵和源码来源。
+
+2026-10-19 实机反馈：用户在 NGP45H 和 Pocket AIS 更新新的镜像后反馈测试
+没有问题。后续新增设备仍需分别记录启动介质和充电场景的实测范围。

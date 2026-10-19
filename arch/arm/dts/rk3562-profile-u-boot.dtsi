@@ -35,8 +35,8 @@
 
 &sdmmc0 {
 	/* Keep firmware-established supplies until init_kernel_dtb(). The
-	 * matching board DTB owns regulator setup and later MMC reinit.
-	 * Early SD access stays in the existing legacy-voltage mode.
+	 * matching board DTB owns regulator setup. The generated MMC include
+	 * then restores this board's original boot-stage properties.
 	 */
 	/delete-property/ vmmc-supply;
 	/delete-property/ vqmmc-supply;

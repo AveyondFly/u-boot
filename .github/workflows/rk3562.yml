@@ -9,16 +9,16 @@ on:
   workflow_dispatch:
     inputs:
       boards:
-        description: 'Board IDs, comma separated, or all'
+        description: 'Boards for non-release builds, comma separated, or all'
         default: all
         type: string
       dtb_mode:
-        description: Charging DTB mode
+        description: Charging DTB mode for non-release builds
         default: embedded
         type: choice
         options: [embedded, external]
       publish:
-        description: Publish a GitHub Release after all builds succeed
+        description: Publish all boards with embedded DTBs and a combined Ports ZIP
         default: false
         type: boolean
 
@@ -39,6 +39,7 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       dtb_mode: ${{ steps.matrix.outputs.dtb_mode }}
+      publish: ${{ steps.matrix.outputs.publish }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,9 +49,15 @@ jobs:
         env:
           BOARDS: ${{ inputs.boards || 'all' }}
           DTB_MODE: ${{ inputs.dtb_mode || 'embedded' }}
+          PUBLISH_RELEASE: ${{ startsWith(github.ref, 'refs/tags/rk3562-v') || inputs.publish == true }}
         run: |
+          if [[ "$PUBLISH_RELEASE" == true ]]; then
+            BOARDS=all
+            DTB_MODE=embedded
+          fi
           python3 scripts/ci_rk3562.py matrix --boards "$BOARDS" >> "$GITHUB_OUTPUT"
           echo "dtb_mode=$DTB_MODE" >> "$GITHUB_OUTPUT"
+          echo "publish=$PUBLISH_RELEASE" >> "$GITHUB_OUTPUT"
 
   build:
     needs: prepare
@@ -119,10 +126,22 @@ jobs:
       - name: Upload release bundle
         uses: actions/upload-artifact@v4
         with:
-          name: rk3562-${{ matrix.board }}-${{ env.DTB_MODE }}
+          name: rk3562-board-${{ matrix.board }}-${{ env.DTB_MODE }}
           path: dist/*
           if-no-files-found: error
           retention-days: 30
+      - name: Upload inputs for the combined Ports package
+        if: env.DTB_MODE == 'embedded'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rk3562-ports-input-${{ matrix.board }}
+          path: |
+            ${{ runner.temp }}/board-build/board-build.json
+            ${{ runner.temp }}/board-build/board-mmc.json
+            ${{ runner.temp }}/board-build/board-power.json
+            ${{ runner.temp }}/board-build/rk3562-uboot-16m.bin
+          if-no-files-found: error
+          retention-days: 7
       - name: Upload failed build log
         if: failure()
         uses: actions/upload-artifact@v4
@@ -132,18 +151,64 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  release:
+  ports:
     needs: [prepare, build]
-    if: startsWith(github.ref, 'refs/tags/rk3562-v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
+    if: needs.prepare.outputs.dtb_mode == 'embedded'
+    runs-on: ubuntu-22.04
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Ports packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-pil fonts-noto-cjk
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rk3562-ports-input-*
+          path: ${{ runner.temp }}/ports-inputs
+          merge-multiple: false
+      - name: Test the combined package builder
+        run: python3 scripts/test_package_rk3562_ports.py -v
+      - name: Build the installable Ports ZIP
+        env:
+          BOARDS: ${{ join(fromJSON(needs.prepare.outputs.matrix).board, ',') }}
+          PUBLISH_RELEASE: ${{ needs.prepare.outputs.publish }}
+        run: |
+          flags=()
+          if [[ "$PUBLISH_RELEASE" == true ]]; then
+            flags+=(--require-all)
+          fi
+          python3 scripts/package_rk3562_ports.py \
+            --build-root "$RUNNER_TEMP/ports-inputs" \
+            --expected-boards "$BOARDS" --source-commit "$GITHUB_SHA" --require-clean \
+            --output "$RUNNER_TEMP/ports-package" --archive-dir dist "${flags[@]}"
+      - name: Upload the installable Ports ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: rk3562-ports
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    needs: [prepare, build, ports]
+    if: needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: rk3562-*
+          pattern: rk3562-board-*
           path: dist
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: rk3562-ports
+          path: dist
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -161,6 +226,12 @@ jobs:
           cat > release-notes.txt <<EOF
           RK3562 U-Boot, built from $SOURCE_SHA.
           Charging DTB mode: $DTB_MODE.
+
+          For installation, download rk3562-update-uboot-ports-*.zip and extract
+          its contents directly into /roms/ports/ (no extra enclosing folder).
+          Run Update U-Boot from Ports; it selects the image for your DT model.
+          The ZIP contains all supported boards. Updating is manual; the updater
+          backs up the boot area and verifies the written image before reporting success.
 
           Each board has a separate archive and SHA-256 file. Archives contain
           images, build logs, configuration and board-build.json provenance.
