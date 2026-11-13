@@ -195,3 +195,32 @@ booti 时，将本次控制台输出保存到同一个私有 vendor 条目（con
 
 此版本首先构建 boot-only 本地诊断包，继续跳过充电探测，不作为已修复固件
 发布。仅安装 Ports 文件并执行 --check，刷写与测试由用户手动完成。
+
+v1.1.3 失败日志与 MBR/GPT 识别修正
+--------------------------------
+
+v1.1.3 实机仍未启动。恢复备份 recovery-20261113T145607Z 保存的控制台显示：
+  mmc1 is current device
+  ** Invalid partition 1 **
+随后回退到 eMMC，报告无法识别文件系统；boot-command-return 为 1。
+这次可以确认自动启动命令实际执行，TF 在分区识别阶段失败，尚未加载内核。
+
+只读检查原始可启动 TF 备份：MBR 的三个分区类型为 0x0c/0x83/0x0c，
+第一个 FAT 分区可启动、起点 32768 sectors；没有 GPT 保护分区 0xee。
+但 LBA1 残留 GPT 头，128 个分区项全为零，头和分区项 CRC 均有效。
+SDK 的 is_pmbr_valid() 对 Rockchip 无条件返回 1，以兼容 Android SD 更新卡；
+因此 GPT 探测先于 DOS 成功，空 GPT 遮住了 MBR 中实际使用的 FAT 分区。
+
+v1.1.4 对 RK3566_HANDHELD_BOOT 启用标准保护 MBR 检查：有合法 0xee
+保护分区才探测 GPT，否则按 MBR 识别。普通 MBR 即使留有有效空 GPT 也能
+找到 FAT；使用 GPT 的 TF/eMMC 及 hybrid MBR 仍可识别。不修改磁盘分区表，
+其他 Rockchip 板继续保持原 SDK 的 SD 更新卡策略。
+board-boot.json 增加 partition_policy=protective-mbr，记录本次构建策略。
+
+专项回归执行真实 part_init、part_test_efi、GPT 头/分区项 CRC 校验和 DOS
+分区解析函数，以合成磁盘复现旧策略误选空 GPT，并验证新策略选择 MBR。
+同时检查正确读取 bootable FAT 起点/长度、合法保护/hybrid MBR、无效签名及
+错误保护分区起点，确认 MBR 场景不会触发 GPT 读取或自动修复。
+  python3 scripts/test_rk3566_partitions.py -v
+该测试已加入 Actions。构建通过后先部署 boot-only 候选包，TF1 启动仍待
+设备测试，无 TF 的 eMMC 冷启动和关机充电仍分别待测。

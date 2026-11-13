@@ -1175,7 +1175,7 @@ static int is_pmbr_valid(legacy_mbr * mbr)
 {
 	int i = 0;
 
-#ifdef CONFIG_ARCH_ROCKCHIP
+#if defined(CONFIG_ARCH_ROCKCHIP) && !defined(CONFIG_RK3566_HANDHELD_BOOT)
 	/*
 	 * In sd-update card, we use RKPARM partition in bootloader to load
 	 * firmware, and use MS-DOS partition in recovery to update system.
@@ -1186,6 +1186,10 @@ static int is_pmbr_valid(legacy_mbr * mbr)
 	 */
 	return 1;
 #endif
+	/*
+	 * Handheld distro disks use their MBR unless it advertises GPT. A
+	 * leftover, even CRC-valid, empty GPT must not hide the FAT partition.
+	 */
 
 	if (!mbr || le16_to_cpu(mbr->signature) != MSDOS_MBR_SIGNATURE)
 		return 0;

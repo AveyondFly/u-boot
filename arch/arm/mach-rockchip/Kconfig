@@ -996,6 +996,8 @@ config RK3566_HANDHELD_BOOT
 	help
 	  Boot extlinux from TF1 before eMMC, without first invoking the
 	  Rockchip Android, FIT-kernel and legacy partition boot commands.
+	  Require a protective MBR before probing GPT, so stale GPT metadata
+	  does not hide the Linux partitions of an MBR-formatted disk.
 	  Hardware and charging settings still come from the model's own DTBs.
 
 config ROCKCHIP_BOOT_TRACE
