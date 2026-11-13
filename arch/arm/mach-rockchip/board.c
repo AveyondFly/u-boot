@@ -522,13 +522,16 @@ static void scan_run_cmd(void)
 
 int board_late_init(void)
 {
+	rockchip_boot_trace_start();
+	rockchip_boot_trace("ethaddr-start", 0);
 #ifdef CONFIG_ROCKCHIP_SET_ETHADDR
 	rockchip_set_ethaddr();
 #endif
+	rockchip_boot_trace("serial-start", 0);
 #ifdef CONFIG_ROCKCHIP_SET_SN
 	rockchip_set_serialno();
 #endif
-	rockchip_boot_trace_start();
+	rockchip_boot_trace("serial-done", 0);
 #ifdef CONFIG_ROCKCHIP_BOOT_TRACE
 	rockchip_boot_trace(env_get("devtype") ? env_get("devtype") : "no-boot-device",
 			    env_get_ulong("devnum", 10, 0));
