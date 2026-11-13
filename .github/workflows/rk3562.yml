@@ -119,6 +119,7 @@ jobs:
           python3 scripts/test_rk3562_release.py -v
           python3 scripts/test_rk3566_board.py -v
           python3 scripts/test_restore_x35h_tf.py -v
+          python3 scripts/test_rk3566_boot_trace.py -v
           python3 scripts/test_rk3566_gpio_clock.py
           python3 scripts/test_rk817_dc.py
           python3 scripts/test_rk3562_gpio_clock.py
@@ -164,6 +165,7 @@ jobs:
             ${{ runner.temp }}/board-build/board-build.json
             ${{ runner.temp }}/board-build/board-mmc.json
             ${{ runner.temp }}/board-build/board-power.json
+            ${{ runner.temp }}/board-build/board-boot.json
             ${{ runner.temp }}/board-build/${{ matrix.soc }}-uboot-16m.bin
           if-no-files-found: error
           retention-days: 7

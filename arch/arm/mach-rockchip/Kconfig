@@ -990,6 +990,28 @@ config ROCKCHIP_EARLY_DISTRO_DTB
 	  This enables loading dtb from distro bootable partition when there
 	  is no valid dtb in android boot.img and rockchip resource.img.
 
+config RK3566_HANDHELD_BOOT
+	bool "RK3566 handheld Linux distro boot policy"
+	depends on ROCKCHIP_RK3568 && DISTRO_DEFAULTS
+	help
+	  Boot extlinux from TF1 before eMMC, without first invoking the
+	  Rockchip Android, FIT-kernel and legacy partition boot commands.
+	  Hardware and charging settings still come from the model's own DTBs.
+
+config ROCKCHIP_BOOT_TRACE
+	bool "Persist RK3566 handheld boot-stage diagnostics"
+	depends on RK3566_HANDHELD_BOOT && ROCKCHIP_VENDOR_PARTITION
+	help
+	  Store a short boot-stage record in private vendor item 0xff00 on the
+	  selected boot disk. It can be read after recovering a failed boot.
+
+config ROCKCHIP_BOOT_ONLY_TEST
+	bool "Diagnostic boot without probing the charging driver"
+	depends on ROCKCHIP_BOOT_TRACE && DM_CHARGE_DISPLAY
+	help
+	  Skip the fuel-gauge/charging probe and loop to isolate normal Linux
+	  startup. These diagnostic images must not be published as firmware.
+
 if ROCKCHIP_EARLY_DISTRO_DTB
 
 config ROCKCHIP_EARLY_DISTRO_DTB_PATH

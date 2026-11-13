@@ -104,6 +104,9 @@
 	#define BOOT_TARGET_DHCP(func)
 #endif
 
+#ifdef CONFIG_RK3566_HANDHELD_BOOT
+#define BOOT_TARGET_DEVICES(func) BOOT_TARGET_MMC(func)
+#else
 #define BOOT_TARGET_DEVICES(func) \
 	BOOT_TARGET_MMC(func) \
 	BOOT_TARGET_MTD(func) \
@@ -111,6 +114,7 @@
 	BOOT_TARGET_USB(func) \
 	BOOT_TARGET_PXE(func) \
 	BOOT_TARGET_DHCP(func)
+#endif
 
 #ifdef CONFIG_ARM64
 #define ROOT_UUID "B921B045-1DF0-41C3-AF44-4C6F280D3FAE;\0"

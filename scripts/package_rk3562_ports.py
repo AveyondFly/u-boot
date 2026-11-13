@@ -54,7 +54,7 @@ def sha256(path):
 
 def build_ports(build_dirs, destination, font, expected_boards=None,
                 require_all=False, source_commit=None, require_clean=False,
-                version=None, release_date=None, soc="rk3562"):
+                version=None, release_date=None, soc="rk3562", allow_diagnostic=False):
     identity = release_identity(version, release_date, soc=soc)
     config = json.loads((ROOT / "tools/ports/uboot/devices.json").read_text())
     if config.get("schema_version") != 1:
@@ -68,8 +68,13 @@ def build_ports(build_dirs, destination, font, expected_boards=None,
     if require_all and set(registered) != profiles:
         raise ValueError("Ports device registrations must match all board profiles")
     builds, selected, models, revisions = [], set(), set(), set()
+    diagnostic_boards = []
     for build_dir in build_dirs:
         metadata = json.loads((build_dir / "board-build.json").read_text())
+        if metadata.get("boot_only_test"):
+            if not allow_diagnostic:
+                raise ValueError("diagnostic boot-only images are excluded from firmware releases")
+            diagnostic_boards.append(metadata["board_id"])
         if metadata.get("soc", "rk3562") != soc:
             raise ValueError("build belongs to a different SoC")
         matches = [d for d in config["devices"] if d["id"] == metadata["board_id"]]
@@ -134,11 +139,19 @@ def build_ports(build_dirs, destination, font, expected_boards=None,
             shutil.copy2(image, data / device["image"])
             for name in ("board-build.json", "board-mmc.json", "board-power.json"):
                 shutil.copy2(build_dir / name, data / (device["id"] + "-" + name))
+            build_metadata = json.loads((build_dir / "board-build.json").read_text())
+            if "board-boot.json" in build_metadata["artifacts"]:
+                boot = build_dir / "board-boot.json"
+                expected = build_metadata["artifacts"][boot.name]
+                if sha256(boot) != expected:
+                    raise ValueError("build artifact checksum mismatch: " + boot.name)
+                shutil.copy2(boot, data / (device["id"] + "-" + boot.name))
         commit, diff = next(iter(revisions))
         package = dict(schema_version=1, soc=soc, boards=sorted(selected), source_commit=commit,
                        tracked_source_diff_sha256=diff,
                        contains_all_profiles=selected == profiles)
         package.update(identity)
+        package["diagnostic_boards"] = diagnostic_boards
         (data / "package.json").write_text(json.dumps(package, indent=2) + "\n")
         screens(data / "screens", font)
         (stage / "Update U-Boot.sh").chmod(0o755)
@@ -187,6 +200,7 @@ def main():
     parser.add_argument("--require-all", action="store_true", help="require every registered board profile")
     parser.add_argument("--source-commit", help="require this source commit")
     parser.add_argument("--require-clean", action="store_true", help="reject builds with tracked source changes")
+    parser.add_argument("--allow-diagnostic", action="store_true", help="local testing only: package boot-only diagnostic images")
     parser.add_argument("--version", help="release version, default: RK3562_VERSION")
     parser.add_argument("--date", help="release date, default: current date in Asia/Shanghai")
     parser.add_argument("--font", type=Path, default=Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"))
@@ -195,7 +209,7 @@ def main():
               [path.parent for path in sorted(args.build_root.glob("*/board-build.json"))])
     expected = args.expected_boards.split(",") if args.expected_boards is not None else None
     build_ports(builds, args.output, args.font, expected, args.require_all, args.source_commit,
-                args.require_clean, args.version, args.date, args.soc)
+                args.require_clean, args.version, args.date, args.soc, args.allow_diagnostic)
     print(args.output.resolve())
     if args.archive_dir:
         print(archive_ports(args.output, args.archive_dir))

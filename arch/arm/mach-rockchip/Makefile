@@ -38,6 +38,7 @@ obj-y += lowlevel_init.o
 obj-y += boot_mode.o
 obj-y += boot_rkimg.o
 obj-y += board.o
+obj-$(CONFIG_ROCKCHIP_BOOT_TRACE) += boot_trace.o
 obj-y += iomem.o
 obj-y += memblk.o
 obj-$(CONFIG_ROCKCHIP_HOTKEY) += hotkey.o

@@ -127,7 +127,7 @@ def prepare_dtb(profile, profile_dir, data_dir, stage):
     return dtb, overlays, sources
 
 
-def render_config(profile, mode, path):
+def render_config(profile, mode, path, boot_only=False):
     soc = board_soc(profile)
     base = ROOT / "configs" / profile["defconfig"]
     values = {}
@@ -147,6 +147,7 @@ def render_config(profile, mode, path):
     if control and values.get("DEFAULT_DEVICE_TREE") != json.dumps(control["name"]):
         raise ValueError("board defconfig must select its own control_dtb.name")
     values.update({
+        "ROCKCHIP_BOOT_ONLY_TEST": "y" if boot_only else "n",
         "ROCKCHIP_EARLY_DISTRO_DTB": "y" if mode == "external" else "n",
         "ROCKCHIP_EARLY_DISTRO_DTB_PATH": json.dumps(profile.get("dtb_path", "/" + soc + "-charge.dtb")),
         "EMBED_KERNEL_DTB": "y" if mode == "embedded" else "n",
@@ -215,8 +216,10 @@ def validate_control_tree(profile, artifacts):
         raise ValueError("FIT control fdt differs from this board's generated DTB")
 
 
-def build(profile, profile_path, data_dir, output, mode, dtb_only):
+def build(profile, profile_path, data_dir, output, mode, dtb_only, boot_only=False):
     soc = board_soc(profile)
+    if boot_only and (soc != "rk3566" or dtb_only):
+        raise ValueError("boot-only diagnostics require a full RK3566 build")
     require_optee = profile.get("firmware", {}).get("optee", True)
     profile_dir = profile_path.parent
     verify_snapshot(data_dir, profile["id"])
@@ -260,7 +263,7 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                 extract_fit(uboot, stage / "firmware", soc=soc, require_optee=require_optee)
                 extract_idb(idb, stage / "original-ddr.bin", 0)
                 config = stage / "board_defconfig"
-                sources.append(render_config(profile, mode, config))
+                sources.append(render_config(profile, mode, config, boot_only))
                 env = os.environ.copy()
                 for key in ("DDR_BIN", "IDB_IMAGE", "BL31_BIN", "BL32_BIN", "BL32_DISABLED", "EARLY_DTB", "SOURCE_OVERLAY", "SPL_DTB_OVERLAY"):
                     env.pop(key, None)
@@ -313,6 +316,22 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                 if mode == "embedded" and fit_payload(artifacts / "uboot.img", "kern-fdt") != dtb.read_bytes():
                     raise ValueError("embedded charging DTB differs from the generated DTB")
                 cfg = (artifacts / "u-boot.config").read_text()
+                if ("CONFIG_ROCKCHIP_BOOT_ONLY_TEST=y\n" in cfg) != boot_only:
+                    raise ValueError("diagnostic charging bypass did not survive Kconfig")
+                environment = dict(line.split("=", 1) for line in
+                                   (artifacts / "u-boot-initial-env.txt").read_text().splitlines()
+                                   if "=" in line)
+                boot_policy = profile.get("boot_policy", "rockchip")
+                if boot_policy == "linux-distro" and (
+                        environment.get("bootcmd") != "run distro_bootcmd" or
+                        environment.get("boot_targets", "").split() != ["mmc1", "mmc0"]):
+                    raise ValueError("compiled environment does not use TF1-first Linux distro boot")
+                (artifacts / "board-boot.json").write_text(json.dumps(dict(
+                    policy=boot_policy, bootcmd=environment.get("bootcmd"),
+                    boot_targets=environment.get("boot_targets"), boot_only_test=boot_only,
+                    persistent_trace="CONFIG_ROCKCHIP_BOOT_TRACE=y\n" in cfg), indent=2) + "\n")
+                if fit_payload(artifacts / "uboot.img", "uboot") != (artifacts / "u-boot-nodtb.bin").read_bytes():
+                    raise ValueError("FIT U-Boot payload differs from this board's compiled binary")
                 soc_symbol = "ROCKCHIP_RK3568" if soc == "rk3566" else "ROCKCHIP_RK3562"
                 for key in [soc_symbol, "CHARGE_ANIMATION", "DM_KEY", "LED"] + profile.get("required_kconfig", []):
                     if f"CONFIG_{key}=y\n" not in cfg:
@@ -333,6 +352,7 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
             git_diff = subprocess.check_output(["git", "diff", "HEAD", "--"], cwd=ROOT)
             metadata = {
                 "schema_version": 1, "soc": soc, "board_id": profile["id"], "dtb_mode": mode,
+                "boot_only_test": boot_only,
                 "dtb_only": dtb_only, "built_at": datetime.now(timezone.utc).isoformat(),
                 "source_commit": git_commit,
                 "tracked_source_diff_sha256": hashlib.sha256(git_diff).hexdigest(),
@@ -373,6 +393,7 @@ def main():
     parser.add_argument("--dtb-mode", choices=("external", "embedded"),
                         help="default: embedded; external must be explicitly selected")
     parser.add_argument("--dtb-only", action="store_true", help="generate DTB without rkbin/compiler/firmware")
+    parser.add_argument("--boot-only", action="store_true", help="diagnostic RK3566 build that skips charging probe/loop")
     args = parser.parse_args()
     profiles = ROOT / ("board/rockchip/" + args.soc + "-profiles")
     if args.list_boards:
@@ -395,9 +416,9 @@ def main():
     if not args.profile and soc != args.soc:
         raise ValueError("board profile belongs to another SoC")
     data_dir = (args.input_dir or ROOT / ("board-data/" + soc) / profile["id"]).resolve()
-    suffix = "dtb" if args.dtb_only else mode
+    suffix = "boot-only" if args.boot_only else ("dtb" if args.dtb_only else mode)
     output = (args.output or ROOT / ("build-" + soc + "-boards") / profile["id"] / suffix).resolve()
-    build(profile, path, data_dir, output, mode, args.dtb_only)
+    build(profile, path, data_dir, output, mode, args.dtb_only, args.boot_only)
 
 
 if __name__ == "__main__":

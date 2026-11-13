@@ -41,6 +41,7 @@
 #include <dm/uclass-internal.h>
 #include <dm/root.h>
 #include <power/charge_display.h>
+#include <asm/arch/boot_trace.h>
 #include <power/regulator.h>
 #include <optee_include/OpteeClientInterface.h>
 #include <optee_include/OpteeClientApiLib.h>
@@ -527,13 +528,17 @@ int board_late_init(void)
 #ifdef CONFIG_ROCKCHIP_SET_SN
 	rockchip_set_serialno();
 #endif
+	rockchip_boot_trace_start();
+	rockchip_boot_trace("download-check", 0);
 	setup_download_mode();
+	rockchip_boot_trace("download-return", 0);
 #ifdef CONFIG_ROCKCHIP_USB_BOOT
 	boot_from_udisk();
 #endif
 #ifdef CONFIG_DM_CHARGE_DISPLAY
 	charge_display();
 #endif
+	rockchip_boot_trace("charge-return", 0);
 
 #ifdef CONFIG_ROCKCHIP_MINIDUMP
 	rk_minidump_init();
@@ -555,6 +560,7 @@ int board_late_init(void)
 	soc_clk_dump();
 	cmdline_handle();
 	scan_run_cmd();
+	rockchip_boot_trace("late-init-done", 0);
 #ifdef CONFIG_AMP
 	amp_cpus_on();
 #endif

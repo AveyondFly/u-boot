@@ -5,8 +5,10 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+import sys
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 spec = importlib.util.spec_from_file_location('recovery', Path(__file__).resolve().parents[1] / 'tools/restore_x35h_tf.py')
 recovery = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(recovery)
@@ -56,6 +58,14 @@ class RecoveryTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             recovery.restore(self.device, self.reference, backup, True, regular_fixture=True)
         self.assertEqual(self.device.read_bytes(), self.failed + self.tail)
+
+    def test_diagnostic_trace_is_saved_before_restoring(self):
+        trace = 'RK3566-BOOT-TRACE v1\nnext-dev-test\nprobe-start:0\n'
+        with patch.object(recovery, 'extract_boot_trace', return_value=trace):
+            result = recovery.restore(self.device, self.reference, self.root / 'traced',
+                                      True, regular_fixture=True)
+        self.assertEqual(Path(result['boot_trace']).read_text(), trace)
+        self.assertEqual(self.device.read_bytes(), self.good + self.tail)
 
 
 if __name__ == '__main__':

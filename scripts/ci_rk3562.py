@@ -126,6 +126,8 @@ def package(board, build_dir, output, version=None, release_date=None, soc="rk35
     soc = board_soc(profile)
     identity = release_identity(version, release_date, soc=soc)
     metadata = json.loads((build_dir / "board-build.json").read_text())
+    if metadata.get("boot_only_test"):
+        raise ValueError("diagnostic boot-only images cannot enter firmware release bundles")
     if metadata["board_id"] != board or metadata["dtb_only"]:
         raise ValueError("release requires a full build of the selected board")
     mode, commit = metadata["dtb_mode"], metadata["source_commit"]

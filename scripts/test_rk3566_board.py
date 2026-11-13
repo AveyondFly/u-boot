@@ -70,6 +70,10 @@ class RK3566Tests(unittest.TestCase):
             self.assertIn(expected + '\n', config)
         self.assertEqual(profile['control_dtb']['mmc_reference_sha256']['spl'],
                          profile['control_dtb']['mmc_reference_sha256']['uboot'])
+        self.assertIn('CONFIG_RK3566_HANDHELD_BOOT=y\n', config)
+        self.assertIn('# CONFIG_ROCKCHIP_BOOT_ONLY_TEST is not set\n', config)
+        boards.render_config(profile, 'embedded', out, boot_only=True)
+        self.assertIn('CONFIG_ROCKCHIP_BOOT_ONLY_TEST=y\n', out.read_text())
 
     def test_rk3566_mmc_paths_and_tf_priority_are_verified(self):
         self.uboot, self.spl = self.fixture('uboot'), self.fixture('spl')

@@ -96,6 +96,13 @@ class PackageTests(unittest.TestCase):
         self.assertEqual([d["id"] for d in json.loads((data / "devices.json").read_text())["devices"]], ["ngp45h"])
         self.assertFalse((data / "pocket-ais-uboot.bin").exists())
 
+    def test_diagnostic_images_need_explicit_local_opt_in(self):
+        self.metadata(0, boot_only_test=True)
+        with self.assertRaisesRegex(ValueError, "excluded from firmware releases"):
+            self.build()
+        metadata = self.build(allow_diagnostic=True)
+        self.assertEqual(metadata["diagnostic_boards"], ["ngp45h"])
+
     def test_incomplete_matrix_or_registration_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "all board profiles"):
             self.build([self.builds[0]], require_all=True)

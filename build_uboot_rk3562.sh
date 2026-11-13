@@ -249,6 +249,7 @@ build_images() {
 		./make.sh "${DEFCONFIG%_defconfig}" --spl-new \
 			"${loader_ini}" "${trust_ini}" \
 			"CROSS_COMPILE=${CROSS_COMPILE}"
+		make -s "CROSS_COMPILE=${CROSS_COMPILE}" u-boot-initial-env
 	)
 }
 
@@ -292,6 +293,7 @@ publish_images() {
 	install -m 0644 "${build_source}/arch/arm/dts/${control_name}.dtb" \
 		"${OUT_DIR}/u-boot-control-full.dtb"
 	install -m 0644 "${build_source}/.config" "${OUT_DIR}/u-boot.config"
+	install -m 0644 "${build_source}/u-boot-initial-env" "${OUT_DIR}/u-boot-initial-env.txt"
 	install -m 0644 "${build_source}/spl/u-boot-spl.bin" "${OUT_DIR}/u-boot-spl.bin"
 	ddr_relative="$(sed -n 's/^FlashData=//p' \
 		"${RKBIN}/RKBOOT/${LOADER_SOC}MINIALL.ini" | tr -d '\r')"

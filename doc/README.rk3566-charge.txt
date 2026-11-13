@@ -124,3 +124,51 @@ TF 固件修订版：本地完整构建/板级校验通过；TF1 启动、无 TF
 
 新增 RK3566 设备需要独立 profile/defconfig/DTS/原厂输入/精确 model 注册，
 并补充 RK3566 输入 Release。矩阵自动发现新板号，不能复用 X35H 的电源和电池。
+
+2026-11-13 distribution 配置对照与第三轮诊断
+----------------------------------------
+
+用户反馈：v1.1.1 TF 固件候选版依然黑屏；再次恢复原始启动区后 X35H 能启动。
+不能把 DDR/BL31 的更换当作根因已修复。v1.1.0 和 v1.1.1 均未通过 TF1 启动实测。
+
+实际可启动配置来自 distribution：
+  projects/ROCKNIX/devices/RK3566/packages/u-boot-Specific/package.mk
+其源码是主线 U-Boot v2026.01，基于 quartz64-a-rk3566_defconfig，补丁固定
+TF1 在 eMMC 之前；DDR 为 v1.23，BL31 为 v1.45。RK356X 的 Generic 包另有
+CPU regulator 检测和 kernel-DTB 初始化之前的供电修补，不能混淆两个包的流程。
+对照的是硬件和启动语义，不将新主线 Kconfig 符号直接复制到当前旧 SDK。
+主线配置参考：
+  https://github.com/u-boot/u-boot/blob/v2026.01/configs/quartz64-a-rk3566_defconfig
+
+本机确认结果：
+  /flash/KERNEL 为未压缩 ARM64 Image，extlinux 指定本机 X35H Linux DTB。
+  实际 CPU regulator 为 I2C0 0x1c TCS4525；原厂硬件 DTB 与运行中 Linux 一致。
+  not-save-power-en 在原厂树中为整数 1，符合本工程 RK817 驱动的解析方式，
+  无需将主线布尔属性解析补丁直接复制过来。
+  早期 MMC 与后续供电仍由 X35H 自己的硬件/控制树管理，不换成 Quartz64 全树。
+
+已修正的启动配置问题：
+  include/configs/evb_rk3568.h 原来无条件覆盖 CONFIG_BOOTCOMMAND 为
+  RKIMG_BOOTCOMMAND；仅添加 DISTRO_DEFAULTS 仍先走 Android、boot_fit、bootrkp。
+  X35H 现在单独启用 RK3566_HANDHELD_BOOT，默认 bootcmd=run distro_bootcmd，
+  boot_targets 仅 mmc1、mmc0，不扫描 MTD/USB/网络。构建后导出并检查
+  真正编译出的 u-boot-initial-env.txt，
+  board-boot.json 保存启动策略/目标/诊断状态。其他板的 SDK 启动路径保持原样。
+  此问题的修正尚不等于证明它是黑屏的唯一原因，仍需硬件测试。
+
+无需串口的阶段日志：
+  X35H 诊断配置启用 ROCKCHIP_BOOT_TRACE，将短日志写到当前启动盘已有的
+  Rockchip Vendor 存储私有条目 0xff00（约磁盘 3.5 MiB，处于预留启动区）。
+  记录 board_late_init、下载键检查、充电探测/电量计初始化、autoboot、
+  booti_start 与 ARM64 Image/FDT 准备结果。不向分区或用户文件系统写日志。
+  tools/read_rk3566_boot_trace.py --host 192.168.31.81 可在启动后只读提取。
+  若失败，恢复脚本会在备份目录保存 boot-trace-before.txt，再恢复启动区。
+  也可用 --image /path/to/before-first16m.bin 离线解码。无日志并不能证明卡在 DDR。
+
+先隔离普通启动与充电探测：
+  ./build_uboot_rk3566_board.sh --board powkiddy-x35h --boot-only
+此镜像保持独立 DTB、TF 固件和实际编译的 SPL，但跳过整个充电 probe/loop，
+所以测试时不会有充电灯效果。先验证能否进入 Linux，成功后再测带充电的镜像。
+boot_only_test 标记写入 board-build.json；普通 CI Release 打包会拒绝此类镜像，
+仅本地 package_rk3562_ports.py --allow-diagnostic 可生成用于手动测试的 Ports 包。
+下一轮恢复失败备份时，阶段日志能区分是否进入下载模式、充电 probe 或内核加载。

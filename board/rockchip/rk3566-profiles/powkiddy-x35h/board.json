@@ -12,7 +12,9 @@
     "PMIC_RK8XX",
     "POWER_FG_RK817",
     "LED_GPIO",
-    "IO_DOMAIN"
+    "IO_DOMAIN",
+    "RK3566_HANDHELD_BOOT",
+    "ROCKCHIP_BOOT_TRACE"
   ],
   "inputs": {
     "linux_dtb": "linux-vendor.dtb",
@@ -140,5 +142,6 @@
       "idb": "f7ba1b1d132be0310e19f4a34d30e2cd973599bc5bafb80a4c892194bd26f181",
       "uboot": "08e1367fabe1c160cabf23372a6acfe771360ad563e90c69fd1949474ae12f2b"
     }
-  }
+  },
+  "boot_policy": "linux-distro"
 }

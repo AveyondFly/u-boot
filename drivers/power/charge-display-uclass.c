@@ -8,6 +8,9 @@
 #include <common.h>
 #include <dm.h>
 #include <power/charge_display.h>
+#ifdef CONFIG_ROCKCHIP_BOOT_TRACE
+#include <asm/arch/boot_trace.h>
+#endif
 
 #define CHARGE_TRACE_SIZE 512
 #define CHARGE_TRACE_VERSION "v4-pmic"
@@ -23,6 +26,9 @@ void charge_display_trace(const char *stage, int value)
 	if (len >= sizeof(trace))
 		return;
 	env_set("charge_trace", trace);
+#ifdef CONFIG_ROCKCHIP_BOOT_TRACE
+	rockchip_boot_trace(stage, value);
+#endif
 }
 
 void charge_display_add_bootargs(void)
@@ -52,6 +58,13 @@ int charge_display(void)
 	int ret;
 
 	env_set("charge_trace", CHARGE_TRACE_VERSION);
+#ifdef CONFIG_ROCKCHIP_BOOT_TRACE
+	charge_display_trace("probe-start", 0);
+#endif
+#ifdef CONFIG_ROCKCHIP_BOOT_ONLY_TEST
+	charge_display_trace("boot-only", 1);
+	return 0;
+#endif
 	ret = uclass_get_device(UCLASS_CHARGE_DISPLAY, 0, &dev);
 	charge_display_trace("display", ret);
 	if (ret) {

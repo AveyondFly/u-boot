@@ -12,6 +12,9 @@
 #include <cli.h>
 #include <console.h>
 #include <version.h>
+#ifdef CONFIG_ROCKCHIP_BOOT_TRACE
+#include <asm/arch/boot_trace.h>
+#endif
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -63,7 +66,13 @@ void main_loop(void)
 	if (cli_process_fdt(&s))
 		cli_secure_boot_cmd(s);
 
+#ifdef CONFIG_ROCKCHIP_BOOT_TRACE
+	rockchip_boot_trace("autoboot", 0);
+#endif
 	autoboot_command(s);
+#ifdef CONFIG_ROCKCHIP_BOOT_TRACE
+	rockchip_boot_trace("autoboot-return", 0);
+#endif
 
 	cli_loop();
 	panic("No CLI available");

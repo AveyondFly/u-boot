@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import stat
+from read_rk3566_boot_trace import extract_boot_trace
 
 FRONT_SIZE = 16 * 1024 * 1024
 OFFSET = 32768
@@ -53,6 +54,15 @@ def restore(device, reference, backup_dir, write=False, *, regular_fixture=False
         if digest(backup.read_bytes()) != digest(current):
             raise ValueError('Backup read-back verification failed')
         (backup_dir / 'before.json').write_text(json.dumps(report, indent=2) + '\n')
+        # Diagnostic extraction must never prevent restoring the known-good boot.
+        try:
+            trace = extract_boot_trace(current)
+        except (ValueError, UnicodeError):
+            trace = None
+        if trace:
+            trace_path = backup_dir / 'boot-trace-before.txt'
+            trace_path.write_text(trace)
+            report['boot_trace'] = str(trace_path)
         target.seek(OFFSET)
         payload = memoryview(original)[OFFSET:]
         while payload:

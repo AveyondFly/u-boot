@@ -1845,8 +1845,17 @@ static int rk817_fg_init(struct rk817_battery_device *battery)
 	rk817_bat_init_voltage_kb(battery);
 	rk817_bat_calibration(battery);
 	rk817_bat_adc_init(battery);
+#ifdef CONFIG_ROCKCHIP_BOOT_TRACE
+	charge_display_trace("fg-rsoc-start", 0);
+#endif
 	rk817_bat_rsoc_init(battery);
+#ifdef CONFIG_ROCKCHIP_BOOT_TRACE
+	charge_display_trace("fg-cap-start", 0);
+#endif
 	rk817_bat_init_coulomb_cap(battery, battery->nac);
+#ifdef CONFIG_ROCKCHIP_BOOT_TRACE
+	charge_display_trace("fg-cap-done", 0);
+#endif
 	rk817_bat_init_ts_detect(battery);
 	rk817_bat_set_initialized_flag(battery);
 

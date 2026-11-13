@@ -13,6 +13,9 @@
 #include <mapmem.h>
 #include <linux/kernel.h>
 #include <linux/sizes.h>
+#ifdef CONFIG_ROCKCHIP_BOOT_TRACE
+#include <asm/arch/boot_trace.h>
+#endif
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -137,7 +140,14 @@ int do_booti(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 	/* Consume 'booti' */
 	argc--; argv++;
 
-	if (booti_start(cmdtp, flag, argc, argv, &images))
+#ifdef CONFIG_ROCKCHIP_BOOT_TRACE
+	rockchip_boot_trace("booti-start", 0);
+#endif
+	ret = booti_start(cmdtp, flag, argc, argv, &images);
+#ifdef CONFIG_ROCKCHIP_BOOT_TRACE
+	rockchip_boot_trace("booti-images", ret);
+#endif
+	if (ret)
 		return 1;
 
 	/*
