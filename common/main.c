@@ -68,6 +68,7 @@ void main_loop(void)
 
 #ifdef CONFIG_ROCKCHIP_BOOT_TRACE
 	rockchip_boot_trace("autoboot", 0);
+	rockchip_boot_trace(s ? s : "no-boot-command", 0);
 #endif
 	autoboot_command(s);
 #ifdef CONFIG_ROCKCHIP_BOOT_TRACE

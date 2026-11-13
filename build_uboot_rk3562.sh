@@ -249,7 +249,12 @@ build_images() {
 		./make.sh "${DEFCONFIG%_defconfig}" --spl-new \
 			"${loader_ini}" "${trust_ini}" \
 			"CROSS_COMPILE=${CROSS_COMPILE}"
-		make -s "CROSS_COMPILE=${CROSS_COMPILE}" u-boot-initial-env
+		# Export the environment from the object already linked into this FIT.
+		# Running make again would refresh the build timestamp and relink U-Boot
+		# after packaging, leaving the exported binary different from the FIT.
+		"${CROSS_COMPILE}objcopy" \
+			--dump-section .rodata.default_environment=u-boot-initial-env.raw env/common.o
+		tr '\000' '\n' < u-boot-initial-env.raw > u-boot-initial-env
 	)
 }
 

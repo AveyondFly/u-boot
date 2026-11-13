@@ -529,6 +529,10 @@ int board_late_init(void)
 	rockchip_set_serialno();
 #endif
 	rockchip_boot_trace_start();
+#ifdef CONFIG_ROCKCHIP_BOOT_TRACE
+	rockchip_boot_trace(env_get("devtype") ? env_get("devtype") : "no-boot-device",
+			    env_get_ulong("devnum", 10, 0));
+#endif
 	rockchip_boot_trace("download-check", 0);
 	setup_download_mode();
 	rockchip_boot_trace("download-return", 0);
