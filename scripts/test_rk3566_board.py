@@ -21,6 +21,7 @@ from rk3562_control_dtb import read_tree
 from rk3562_mmc import (boot_mmc, extract_vendor_trees, validate_boot_storage,
                         verify_mmc_configuration, write_mmc_include)
 from rk3562_release import release_identity
+from extract_rk3562_fit_firmware import extract, verified_fit_payload
 
 
 class RK3566Tests(unittest.TestCase):
@@ -108,6 +109,30 @@ class RK3566Tests(unittest.TestCase):
         for key, value in [('load', '0x50000'), ('size', 64), ('sha256', 'c' * 64)]:
             bad = [dict(renamed[0], **{key: value}), renamed[1]]
             self.assertNotEqual(boards.firmware_payloads(old), boards.firmware_payloads(bad))
+
+    def test_tf_fit_offsets_and_explicit_absence_of_optee(self):
+        payload = b'authenticated-TF-BL31' * 4
+        checksum = hashlib.sha256(payload).hexdigest()
+        source = self.root / 'tf-fit.dts'
+        source.write_text('/dts-v1/; / { images { atf-1 {'
+                          'compression = "none"; load = <0x40000>; data-offset = <0>; '
+                          f'data-size = <{len(payload)}>; '
+                          'hash { algo = "sha256"; value = [' + bytes.fromhex(checksum).hex(' ') + ']; }; '
+                          '}; }; };')
+        image = self.compile(source, self.root / 'tf-fit.img')
+        header = image.read_bytes()
+        image.write_bytes(header + bytes(-len(header) % 4) + payload)
+        self.assertEqual(verified_fit_payload(image, 'atf-1'), payload)
+        with self.assertRaises(ValueError):
+            extract(image, self.root / 'wrong-policy', soc='rk3566')
+        with contextlib.redirect_stdout(io.StringIO()):
+            extract(image, self.root / 'bl31-only', soc='rk3566', require_optee=False)
+        self.assertFalse((self.root / 'bl31-only/optee.bin').exists())
+        records = json.loads((self.root / 'bl31-only/firmware.json').read_text())
+        self.assertEqual(records[0]['sha256'], checksum)
+        data = bytearray(image.read_bytes()); data[-1] ^= 1; image.write_bytes(data)
+        with self.assertRaisesRegex(ValueError, 'FIT hash mismatch'):
+            verified_fit_payload(image, 'atf-1')
 
     def test_ports_bundle_is_limited_to_rk3566(self):
         build = self.root / 'build'

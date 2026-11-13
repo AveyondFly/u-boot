@@ -37,6 +37,7 @@ DDR_BIN="${DDR_BIN:-}"
 IDB_IMAGE="${IDB_IMAGE:-}"
 BL31_BIN="${BL31_BIN:-}"
 BL32_BIN="${BL32_BIN:-}"
+BL32_DISABLED="${BL32_DISABLED:-0}"
 RKBIN="${RKBIN:-}"
 RKBIN_SOURCE="${RKBIN:-${RKBIN_ARCHIVE}}"
 KEEP_WORK="${KEEP_WORK:-0}"
@@ -162,6 +163,10 @@ install_firmware_override() {
 apply_firmware_overrides() {
 	local loader_ini="${RKBIN}/RKBOOT/${LOADER_SOC}MINIALL.ini"
 	local trust_ini="${RKBIN}/RKTRUST/${TRUST_SOC}TRUST.ini"
+	if [ "$BL32_DISABLED" = 1 ]; then
+		[ -z "$BL32_BIN" ] || die "BL32 cannot be both disabled and supplied"
+		sed -i '/^\[BL32_OPTION\]/,/^\[BL33_OPTION\]/{s/^SEC=.*/SEC=0/; /^PATH=/d;}' "$trust_ini"
+	fi
 
 	if [ -n "${DDR_BIN}" ]; then
 		install_firmware_override "${DDR_BIN}" \
@@ -222,6 +227,7 @@ validate_firmware_set() {
 		"$(sed -n 's/^FlashData=//p' "${loader_ini}" | tr -d '\r')" \
 		"$(sed -n '/_bl31_/s/^PATH=//p' "${trust_ini}" | tr -d '\r')" \
 		"$(sed -n '/_bl32_/s/^PATH=//p' "${trust_ini}" | tr -d '\r')"; do
+		[ -n "$relative" ] || continue
 		[ -f "${RKBIN}/${relative}" ] || die "Required rkbin firmware is missing: ${relative}"
 	done
 }
@@ -307,7 +313,13 @@ publish_images() {
 
 	"${build_source}/tools/dumpimage" -l "${build_source}/uboot.img" \
 		>"${OUT_DIR}/uboot-fit.txt"
-	grep -q 'OP-TEE' "${OUT_DIR}/uboot-fit.txt" || die "OP-TEE is absent from the FIT"
+	local fit_nodes
+	fit_nodes="$(fdtget -l "${OUT_DIR}/uboot.img" /images)"
+	if [ "$BL32_DISABLED" != 1 ]; then
+		grep -qx 'optee' <<< "$fit_nodes" || die "OP-TEE is absent from the FIT"
+	elif grep -qx 'optee' <<< "$fit_nodes"; then
+		die "OP-TEE unexpectedly added to a BL31-only board"
+	fi
 	grep -q 'ARM Trusted Firmware' "${OUT_DIR}/uboot-fit.txt" || die "BL31 is absent from the FIT"
 
 	{

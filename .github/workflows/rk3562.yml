@@ -83,7 +83,7 @@ jobs:
       BOARD: ${{ matrix.board }}
       SOC: ${{ matrix.soc }}
       DTB_MODE: ${{ needs.prepare.outputs.dtb_mode }}
-      INPUTS_TAG: ${{ matrix.soc == 'rk3566' && (vars.RK3566_INPUTS_TAG || 'rk3566-inputs-v1') || (vars.RK3562_INPUTS_TAG || 'rk3562-inputs-v2') }}
+      INPUTS_TAG: ${{ matrix.soc == 'rk3566' && (vars.RK3566_INPUTS_TAG || 'rk3566-inputs-v2') || (vars.RK3562_INPUTS_TAG || 'rk3562-inputs-v2') }}
       INPUTS_REPOSITORY: ${{ vars.RK3562_INPUTS_REPOSITORY || github.repository }}
       PYTHONDONTWRITEBYTECODE: '1'
       RELEASE_VERSION: ${{ needs.prepare.outputs.release_version }}
@@ -118,6 +118,7 @@ jobs:
           python3 scripts/test_rk3562_ports.py -v
           python3 scripts/test_rk3562_release.py -v
           python3 scripts/test_rk3566_board.py -v
+          python3 scripts/test_restore_x35h_tf.py -v
           python3 scripts/test_rk3566_gpio_clock.py
           python3 scripts/test_rk817_dc.py
           python3 scripts/test_rk3562_gpio_clock.py

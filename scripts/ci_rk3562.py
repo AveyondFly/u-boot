@@ -50,6 +50,7 @@ def matrix(boards, soc="rk3562"):
 def input_names(profile):
     inputs = profile["inputs"]
     names = [inputs.get("linux_dtb") or inputs["linux_dts"], inputs["idb"], inputs["uboot"]]
+    names.extend(profile.get("control_dtb", {}).get("inputs", {}).values())
     for name in names:
         path = PurePosixPath(name)
         if path.is_absolute() or ".." in path.parts or str(path) != name or name == "snapshot.json":

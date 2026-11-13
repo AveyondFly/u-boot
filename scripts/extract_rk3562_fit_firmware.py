@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 import struct
 import subprocess
+from rk3562_control_dtb import read_tree
 
 
 def prop(image, node, name, kind="x"):
@@ -27,7 +28,37 @@ def integer(image, node, name):
     return value
 
 
-def extract(image, output, soc="rk3562"):
+def verified_fit_payload(image, name):
+    """Read an authenticated, uncompressed FIT payload in either external layout."""
+    blob = image.read_bytes()
+    tree = read_tree(image)
+    node = "/images/" + name
+    props = tree[node]
+    if props.get("compression", b"none\0") != b"none\0":
+        raise ValueError("compressed firmware is not supported")
+    if "data" in props:
+        if "data-offset" in props or "data-position" in props:
+            raise ValueError("ambiguous FIT payload layout")
+        payload = props["data"]
+    else:
+        if ("data-offset" in props) == ("data-position" in props):
+            raise ValueError("expected one external FIT payload layout")
+        header = struct.unpack_from(">I", blob, 4)[0]
+        offset = (int.from_bytes(props["data-position"], "big") if "data-position" in props
+                  else ((header + 3) & ~3) + int.from_bytes(props["data-offset"], "big"))
+        size = int.from_bytes(props["data-size"], "big")
+        if offset < header or size <= 0 or offset + size > len(blob):
+            raise ValueError("firmware lies outside the FIT: " + name)
+        payload = blob[offset:offset + size]
+    hashes = [p for n, p in tree.items() if n.rsplit("/", 1)[0] == node
+              and n.rsplit("/", 1)[1].startswith("hash")]
+    if not hashes or any(p.get("algo") != b"sha256\0" or
+                         p.get("value") != hashlib.sha256(payload).digest() for p in hashes):
+        raise ValueError("FIT hash mismatch: " + name)
+    return payload
+
+
+def extract(image, output, soc="rk3562", require_optee=True):
     if soc not in ("rk3562", "rk3566"):
         raise ValueError("unsupported firmware SoC")
     blob = image.read_bytes()
@@ -41,28 +72,14 @@ def extract(image, output, soc="rk3562"):
     ).split()
     atf_names = sorted((name for name in names if name.startswith("atf-")),
                        key=lambda name: int(name[4:]))
-    if not atf_names or "optee" not in names:
+    if not atf_names or ("optee" in names) != require_optee:
         raise ValueError("expected ATF segments and OP-TEE in RK3562 FIT")
-    for name in atf_names + ["optee"]:
+    for name in atf_names + (["optee"] if require_optee else []):
         node = "/images/" + name
-        if prop(image, node, "compression", "s") != "none":
-            raise ValueError("compressed firmware is not supported")
-        offset = integer(image, node, "data-position")
-        size = integer(image, node, "data-size")
+        data = verified_fit_payload(image, name)
+        size = len(data)
         load = integer(image, node, "load")
-        header_size = struct.unpack_from(">I", blob, 4)[0]
-        if offset < header_size or size <= 0 or offset + size > len(blob):
-            raise ValueError("firmware lies outside the FIT: " + name)
-        data = blob[offset:offset + size]
-        if prop(image, node + "/hash", "algo", "s") != "sha256":
-            raise ValueError("expected sha256 for " + name)
-        expected = b"".join(
-            struct.pack(">I", int(word, 16))
-            for word in prop(image, node + "/hash", "value").split()
-        ).hex()
         actual = hashlib.sha256(data).hexdigest()
-        if actual != expected:
-            raise ValueError("FIT hash mismatch: " + name)
         (output / (name + ".bin")).write_bytes(data)
         records.append(dict(name=name, load=hex(load), size=size, sha256=actual))
         if name.startswith("atf-"):

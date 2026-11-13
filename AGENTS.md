@@ -5,6 +5,10 @@ For RK356x changes, follow `doc/README.rk3562-charge.txt`,
 
 - Give every model its own profile, defconfig, control DTS and vendor inputs.
   Preserve its own DDR, BL31, BL32, regulators, battery data and charging GPIOs.
+- Select DDR/BL31/BL32 from the boot chain known to boot the target OS on that
+  device. An eMMC Android loader is not interchangeable with a working TF Linux
+  loader. Preserve the absence of BL32 when the working chain has no OP-TEE;
+  record firmware and hardware/control-DTB input sources separately.
 - Obtain early MMC settings from that device's original IDB/SPL and U-Boot FIT.
   Compare SPL and U-Boot separately; their modes can differ. A Linux DTB is not
   a substitute for either boot-stage DTB. An EVB model string alone does not

@@ -217,6 +217,7 @@ def validate_control_tree(profile, artifacts):
 
 def build(profile, profile_path, data_dir, output, mode, dtb_only):
     soc = board_soc(profile)
+    require_optee = profile.get("firmware", {}).get("optee", True)
     profile_dir = profile_path.parent
     verify_snapshot(data_dir, profile["id"])
     if output == data_dir or output.is_relative_to(data_dir) or data_dir.is_relative_to(output):
@@ -244,26 +245,35 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                 # The backend's generic firmware fallbacks cannot leak into this path.
                 idb = input_file(data_dir, profile["inputs"]["idb"])
                 uboot = input_file(data_dir, profile["inputs"]["uboot"])
+                for name, expected in profile.get("firmware", {}).get("input_sha256", {}).items():
+                    if sha256(input_file(data_dir, profile["inputs"][name])) != expected:
+                        raise ValueError("working boot firmware checksum mismatch: " + name)
                 sources.extend([idb, uboot])
-                references = extract_vendor_trees(idb, uboot, stage / "vendor-boot")
+                control_inputs = profile["control_dtb"].get("inputs", {})
+                early_idb = input_file(data_dir, control_inputs["idb"]) if control_inputs else idb
+                early_fit = input_file(data_dir, control_inputs["uboot"]) if control_inputs else uboot
+                sources.extend(p for p in (early_idb, early_fit) if p not in sources)
+                references = extract_vendor_trees(early_idb, early_fit, stage / "vendor-boot")
                 verify_vendor_references(profile["control_dtb"], references)
                 source_overlay, policy = prepare_control_tree(profile, profile_dir, dtb, stage, references)
                 sources.append(policy)
-                extract_fit(uboot, stage / "firmware", soc=soc)
+                extract_fit(uboot, stage / "firmware", soc=soc, require_optee=require_optee)
                 extract_idb(idb, stage / "original-ddr.bin", 0)
                 config = stage / "board_defconfig"
                 sources.append(render_config(profile, mode, config))
                 env = os.environ.copy()
-                for key in ("DDR_BIN", "IDB_IMAGE", "BL31_BIN", "BL32_BIN", "EARLY_DTB", "SOURCE_OVERLAY", "SPL_DTB_OVERLAY"):
+                for key in ("DDR_BIN", "IDB_IMAGE", "BL31_BIN", "BL32_BIN", "BL32_DISABLED", "EARLY_DTB", "SOURCE_OVERLAY", "SPL_DTB_OVERLAY"):
                     env.pop(key, None)
                 env.update({
                     "SOC": soc,
                     "DEFCONFIG": profile["defconfig"], "DEFCONFIG_FILE": str(config),
                     "IDB_IMAGE": str(idb), "BL31_BIN": str(stage / ("firmware/" + soc + "_bl31_vendor.elf")),
-                    "BL32_BIN": str(stage / "firmware/optee.bin"), "OUT_DIR": str(artifacts),
+                    "BL32_DISABLED": "0" if require_optee else "1", "OUT_DIR": str(artifacts),
                     "CROSS_COMPILE": os.environ.get("CROSS_COMPILE", DEFAULT_CROSS),
                     "SPL_DTB_OVERLAY": str(stage / "spl-mmc.dtbo"),
                 })
+                if require_optee:
+                    env["BL32_BIN"] = str(stage / "firmware/optee.bin")
                 env["SOURCE_OVERLAY"] = str(source_overlay)
                 if mode == "embedded":
                     env["EARLY_DTB"] = str(dtb)
@@ -290,7 +300,8 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                              io_domain_driver="CONFIG_IO_DOMAIN=y\n" in
                              (artifacts / "u-boot.config").read_text())
                 (artifacts / "board-power.json").write_text(json.dumps(power, indent=2) + "\n")
-                extract_fit(artifacts / "uboot.img", stage / "rebuilt-firmware", soc=soc)
+                extract_fit(artifacts / "uboot.img", stage / "rebuilt-firmware", soc=soc,
+                            require_optee=require_optee)
                 expected = (stage / "firmware/firmware.json").read_bytes()
                 rebuilt = (stage / "rebuilt-firmware/firmware.json").read_bytes()
                 if firmware_payloads(json.loads(expected)) != firmware_payloads(json.loads(rebuilt)):
@@ -330,6 +341,7 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                     "scripts/extract_rk3562_fit_firmware.py", "scripts/extract_rockchip_rkns.py",
                     "scripts/rk3562_control_dtb.py", "scripts/rk3562_mmc.py")},
                 "control_dtb": profile.get("control_dtb"),
+                "firmware": profile.get("firmware", {"source": "vendor-boot", "optee": True}),
                 "dtb_install_path": profile.get("dtb_path", "/" + soc + "-charge.dtb") if mode == "external" else None,
                 "inputs": [{"path": str(path), "sha256": sha256(path)} for path in sources],
                 "artifacts": {p.name: sha256(p) for p in artifacts.iterdir() if p.is_file()},
