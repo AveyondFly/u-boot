@@ -172,3 +172,26 @@ CPU regulator 检测和 kernel-DTB 初始化之前的供电修补，不能混淆
 boot_only_test 标记写入 board-build.json；普通 CI Release 打包会拒绝此类镜像，
 仅本地 package_rk3562_ports.py --allow-diagnostic 可生成用于手动测试的 Ports 包。
 下一轮恢复失败备份时，阶段日志能区分是否进入下载模式、充电 probe 或内核加载。
+
+v1.1.2 实机结果与控制台诊断
+--------------------------
+
+用户反馈 boot-only v1.1.2 仍黑屏，恢复原始 TF 启动区后设备正常启动。
+恢复备份 recovery-20261113T143455Z 中的日志确认已完成 board_late_init、
+下载键检查和充电探测旁路；在自动启动前记录 run distro_bootcmd，随后返回
+主循环，未记录 booti-start。旧记录点在 autoboot_command() 外部，不能据此
+断言命令实际执行，也不能把 autoboot-return:0 当成命令成功的返回值。
+
+再次只读核对：TF 第一个分区的 MBR bootable 位为 0x80、类型 FAT32；
+extlinux.conf 有末尾换行，使用 LINUX、FDT、APPEND，当前解析器支持这些指令。
+尚未确定无法进入 Linux 的根因，不能宣称镜像已经修复。
+
+v1.1.3 为定位问题补充实际 bootdelay、boot-command-start/return 及命令返回值，
+启用该板专用的 CONSOLE_RECORD。自动启动前清空缓冲，失败返回或准备进入
+booti 时，将本次控制台输出保存到同一个私有 vendor 条目（console-output）。
+最多保存 8 KiB 控制台输出和约 2 KiB 阶段记录；reader 与恢复脚本仍按原方式
+提取，可获得分区、MMC、文件系统及 extlinux 的真实报错。board-boot.json
+增加 persistent_console，构建强制检查该板启用了控制台记录。
+
+此版本首先构建 boot-only 本地诊断包，继续跳过充电探测，不作为已修复固件
+发布。仅安装 Ports 文件并执行 --check，刷写与测试由用户手动完成。

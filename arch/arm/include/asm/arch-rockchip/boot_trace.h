@@ -7,9 +7,11 @@
 #ifdef CONFIG_ROCKCHIP_BOOT_TRACE
 void rockchip_boot_trace_start(void);
 void rockchip_boot_trace(const char *stage, int value);
+void rockchip_boot_trace_console(void);
 #else
 static inline void rockchip_boot_trace_start(void) {}
 static inline void rockchip_boot_trace(const char *stage, int value) {}
+static inline void rockchip_boot_trace_console(void) {}
 #endif
 
 #endif

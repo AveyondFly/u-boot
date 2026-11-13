@@ -1001,9 +1001,11 @@ config RK3566_HANDHELD_BOOT
 config ROCKCHIP_BOOT_TRACE
 	bool "Persist RK3566 handheld boot-stage diagnostics"
 	depends on RK3566_HANDHELD_BOOT && ROCKCHIP_VENDOR_PARTITION
+	select CONSOLE_RECORD
 	help
-	  Store a short boot-stage record in private vendor item 0xff00 on the
-	  selected boot disk. It can be read after recovering a failed boot.
+	  Store boot stages and the boot command's console errors in private
+	  vendor item 0xff00 on the selected boot disk. The record can be read
+	  after recovering a failed boot.
 
 config ROCKCHIP_BOOT_ONLY_TEST
 	bool "Diagnostic boot without probing the charging driver"

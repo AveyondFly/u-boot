@@ -69,10 +69,13 @@ void main_loop(void)
 #ifdef CONFIG_ROCKCHIP_BOOT_TRACE
 	rockchip_boot_trace("autoboot", 0);
 	rockchip_boot_trace(s ? s : "no-boot-command", 0);
+	/* Keep partition, filesystem and extlinux errors from this attempt. */
+	console_record_reset_enable();
 #endif
 	autoboot_command(s);
 #ifdef CONFIG_ROCKCHIP_BOOT_TRACE
 	rockchip_boot_trace("autoboot-return", 0);
+	rockchip_boot_trace_console();
 #endif
 
 	cli_loop();

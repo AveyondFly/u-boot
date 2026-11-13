@@ -329,7 +329,9 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only, boot_only=Fal
                 (artifacts / "board-boot.json").write_text(json.dumps(dict(
                     policy=boot_policy, bootcmd=environment.get("bootcmd"),
                     boot_targets=environment.get("boot_targets"), boot_only_test=boot_only,
-                    persistent_trace="CONFIG_ROCKCHIP_BOOT_TRACE=y\n" in cfg), indent=2) + "\n")
+                    persistent_trace="CONFIG_ROCKCHIP_BOOT_TRACE=y\n" in cfg,
+                    persistent_console="CONFIG_ROCKCHIP_BOOT_TRACE=y\n" in cfg and
+                    "CONFIG_CONSOLE_RECORD=y\n" in cfg), indent=2) + "\n")
                 if fit_payload(artifacts / "uboot.img", "uboot") != (artifacts / "u-boot-nodtb.bin").read_bytes():
                     raise ValueError("FIT U-Boot payload differs from this board's compiled binary")
                 soc_symbol = "ROCKCHIP_RK3568" if soc == "rk3566" else "ROCKCHIP_RK3562"

@@ -14,7 +14,8 @@
     "LED_GPIO",
     "IO_DOMAIN",
     "RK3566_HANDHELD_BOOT",
-    "ROCKCHIP_BOOT_TRACE"
+    "ROCKCHIP_BOOT_TRACE",
+    "CONSOLE_RECORD"
   ],
   "inputs": {
     "linux_dtb": "linux-vendor.dtb",

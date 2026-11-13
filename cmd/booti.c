@@ -146,6 +146,7 @@ int do_booti(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 	ret = booti_start(cmdtp, flag, argc, argv, &images);
 #ifdef CONFIG_ROCKCHIP_BOOT_TRACE
 	rockchip_boot_trace("booti-images", ret);
+	rockchip_boot_trace_console();
 #endif
 	if (ret)
 		return 1;

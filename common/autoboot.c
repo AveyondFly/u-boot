@@ -14,6 +14,9 @@
 #include <menu.h>
 #include <post.h>
 #include <u-boot/sha256.h>
+#ifdef CONFIG_ROCKCHIP_BOOT_TRACE
+#include <asm/arch/boot_trace.h>
+#endif
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -337,6 +340,9 @@ const char *bootdelay_process(void)
 
 	process_fdt_options(gd->fdt_blob);
 	stored_bootdelay = bootdelay;
+#ifdef CONFIG_ROCKCHIP_BOOT_TRACE
+	rockchip_boot_trace("bootdelay", bootdelay);
+#endif
 
 	return s;
 }
@@ -356,7 +362,15 @@ void autoboot_command(const char *s)
 		int prev = disable_ctrlc(1);	/* disable Control C checking */
 #endif
 
+#ifdef CONFIG_ROCKCHIP_BOOT_TRACE
+		int ret;
+
+		rockchip_boot_trace("boot-command-start", 0);
+		ret = run_command_list(s, -1, 0);
+		rockchip_boot_trace("boot-command-return", ret);
+#else
 		run_command_list(s, -1, 0);
+#endif
 		autoboot_command_fail_handle();
 
 #if defined(CONFIG_AUTOBOOT_KEYED) && !defined(CONFIG_AUTOBOOT_KEYED_CTRLC)

@@ -13,7 +13,24 @@ from read_rk3566_boot_trace import extract_boot_trace, VENDOR_OFFSET, SLOT_SIZE,
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def actual_function(source, signature):
+    start = source.index(signature)
+    end = source.index('{', start) + 1
+    depth = 1
+    while depth:
+        depth += (source[end] == '{') - (source[end] == '}')
+        end += 1
+    return source[start:end] + '\n'
+
+
 class TraceTests(unittest.TestCase):
+    def compile_run(self, source):
+        with tempfile.TemporaryDirectory() as temporary:
+            src, exe = Path(temporary) / 'test.c', Path(temporary) / 'test'
+            src.write_text(source)
+            subprocess.run(['cc', '-std=c99', '-Wall', '-Wextra', '-Werror', str(src), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
     def fixture(self, version=1, trace=True):
         slot = bytearray(SLOT_SIZE)
         payload = b'RK3566-BOOT-TRACE v1\nnext-dev-test\nprobe-start:0\n'
@@ -47,15 +64,7 @@ class TraceTests(unittest.TestCase):
 
     def test_actual_c_writer_persists_bounded_trace_and_starts_fresh(self):
         source = (ROOT / 'arch/arm/mach-rockchip/boot_trace.c').read_text()
-        def actual_function(name):
-            start = source.index('void ' + name + '(')
-            end = source.index('{', start) + 1
-            depth = 1
-            while depth:
-                depth += (source[end] == '{') - (source[end] == '}')
-                end += 1
-            return source[start:end] + '\n'
-        functions = actual_function('rockchip_boot_trace_start') + actual_function('rockchip_boot_trace')
+        functions = actual_function(source, 'void rockchip_boot_trace_start(') + actual_function(source, 'void rockchip_boot_trace(')
         pre = r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -85,11 +94,84 @@ int main(void) {
  return 0;
 }
 '''
-        with tempfile.TemporaryDirectory() as temporary:
-            src, exe = Path(temporary) / 'test.c', Path(temporary) / 'test'
-            src.write_text(pre + functions + post)
-            subprocess.run(['cc', '-std=c99', '-Wall', '-Wextra', '-Werror', str(src), '-o', str(exe)], check=True)
-            subprocess.run([str(exe)], check=True)
+        self.compile_run(pre + functions + post)
+
+    def test_console_errors_are_saved_without_recursive_recording(self):
+        source = (ROOT / 'arch/arm/mach-rockchip/boot_trace.c').read_text()
+        functions = actual_function(source, 'void rockchip_boot_trace_console(')
+        self.compile_run(r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#define ROCKCHIP_BOOT_TRACE_ID 0xff00
+#define GD_FLG_RECORD 0x1000
+struct membuff { char *start; unsigned position; };
+struct global_data { unsigned long flags; struct membuff console_out; } data, *gd=&data;
+static bool trace_ready;
+static char boot_trace[12288], saved[12288];
+static unsigned writes;
+static int membuff_getbyte(struct membuff *mb) {
+ assert(!(gd->flags & GD_FLG_RECORD));
+ return mb->start[mb->position] ? (unsigned char)mb->start[mb->position++] : -1;
+}
+static int vendor_storage_write(unsigned id, void *data, unsigned size) {
+ assert(!(gd->flags & GD_FLG_RECORD));
+ assert(id==0xff00 && size<=sizeof(saved));
+ memcpy(saved,data,size); writes++; return 0;
+}
+''' + functions + r'''
+int main(void) {
+ rockchip_boot_trace_console(); assert(writes==0);
+ trace_ready=true;
+ rockchip_boot_trace_console(); assert(writes==0);
+ char output[8192]; memset(output,'x',sizeof(output)-1); output[8191]=0;
+ strcpy(output+8100,"Error reading config file\n");
+ strcpy(boot_trace,"RK3566-BOOT-TRACE v1\nboot-command-return:1\n");
+ gd->console_out.start=output; gd->flags=GD_FLG_RECORD|2;
+ rockchip_boot_trace_console();
+ assert(writes==1 && gd->flags==(GD_FLG_RECORD|2));
+ assert(strstr(saved,"boot-command-return:1\nconsole-output:\n"));
+ assert(strstr(saved,"Error reading config file\n"));
+ memset(boot_trace,'x',sizeof(boot_trace)-1); boot_trace[sizeof(boot_trace)-1]=0;
+ rockchip_boot_trace_console(); assert(writes==1);
+ assert(gd->flags==(GD_FLG_RECORD|2));
+ return 0;
+}
+''')
+
+    def test_autoboot_records_execution_result_separately_from_skipped_boot(self):
+        source = (ROOT / 'common/autoboot.c').read_text()
+        function = actual_function(source, 'void autoboot_command(')
+        self.compile_run(r'''
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#define CONFIG_ROCKCHIP_BOOT_TRACE 1
+#define debug(...) ((void)0)
+static int stored_bootdelay, aborted, command_calls, command_result, fail_calls;
+static char stages[1024];
+static int abortboot(int delay) { assert(delay==stored_bootdelay); return aborted; }
+static void rockchip_boot_trace(const char *stage,int value) {
+ char line[100]; snprintf(line,sizeof(line),"%s:%d\n",stage,value); strcat(stages,line);
+}
+static int run_command_list(const char *s,int length,int flag) {
+ assert(!strcmp(s,"run distro_bootcmd") && length==-1 && flag==0);
+ command_calls++; return command_result;
+}
+static void autoboot_command_fail_handle(void) { fail_calls++; }
+''' + function + r'''
+int main(void) {
+ stored_bootdelay=-1; autoboot_command("run distro_bootcmd");
+ assert(command_calls==0 && !stages[0]);
+ stored_bootdelay=0; aborted=1; autoboot_command("run distro_bootcmd");
+ assert(command_calls==0 && !stages[0]);
+ aborted=0; command_result=1; autoboot_command("run distro_bootcmd");
+ assert(command_calls==1 && fail_calls==1);
+ assert(strstr(stages,"boot-command-start:0\nboot-command-return:1\n"));
+ return 0;
+}
+''')
 
 
 if __name__ == '__main__':
