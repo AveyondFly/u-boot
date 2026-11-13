@@ -1,9 +1,9 @@
-name: RK3562 U-Boot
+name: RK356x U-Boot
 
 on:
   push:
     branches: [rk3562]
-    tags: ['rk3562-v*']
+    tags: ['rk356x-v*']
   pull_request:
     branches: [rk3562]
   workflow_dispatch:
@@ -18,11 +18,11 @@ on:
         type: choice
         options: [embedded, external]
       publish:
-        description: Publish all boards with embedded DTBs and a combined Ports ZIP
+        description: Publish all boards with embedded DTBs and a Ports ZIP per SoC
         default: false
         type: boolean
       version:
-        description: 'Release version X.Y.Z; leave empty to use RK3562_VERSION'
+        description: 'Release version X.Y.Z; leave empty to use RK356X_VERSION'
         default: ''
         type: string
 
@@ -30,7 +30,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: rk3562-${{ github.workflow }}-${{ github.ref }}
+  group: rk356x-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
@@ -42,6 +42,7 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
+      ports_matrix: ${{ steps.matrix.outputs.ports_matrix }}
       dtb_mode: ${{ steps.matrix.outputs.dtb_mode }}
       publish: ${{ steps.matrix.outputs.publish }}
       release_version: ${{ steps.matrix.outputs.release_version }}
@@ -56,7 +57,7 @@ jobs:
         env:
           BOARDS: ${{ inputs.boards || 'all' }}
           DTB_MODE: ${{ inputs.dtb_mode || 'embedded' }}
-          PUBLISH_RELEASE: ${{ startsWith(github.ref, 'refs/tags/rk3562-v') || inputs.publish == true }}
+          PUBLISH_RELEASE: ${{ startsWith(github.ref, 'refs/tags/rk356x-v') || inputs.publish == true }}
           RELEASE_VERSION: ${{ inputs.version || '' }}
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
@@ -65,10 +66,10 @@ jobs:
             BOARDS=all
             DTB_MODE=embedded
           fi
-          python3 scripts/ci_rk3562.py matrix --boards "$BOARDS" >> "$GITHUB_OUTPUT"
+          python3 scripts/ci_rk3562.py --soc all matrix --boards "$BOARDS" >> "$GITHUB_OUTPUT"
           echo "dtb_mode=$DTB_MODE" >> "$GITHUB_OUTPUT"
           echo "publish=$PUBLISH_RELEASE" >> "$GITHUB_OUTPUT"
-          python3 scripts/rk3562_release.py --version "$RELEASE_VERSION" \
+          python3 scripts/rk3562_release.py --soc rk356x --version "$RELEASE_VERSION" \
             --ref-type "$REF_TYPE" --ref "$REF_NAME" >> "$GITHUB_OUTPUT"
 
   build:
@@ -80,8 +81,9 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     env:
       BOARD: ${{ matrix.board }}
+      SOC: ${{ matrix.soc }}
       DTB_MODE: ${{ needs.prepare.outputs.dtb_mode }}
-      INPUTS_TAG: ${{ vars.RK3562_INPUTS_TAG || 'rk3562-inputs-v2' }}
+      INPUTS_TAG: ${{ matrix.soc == 'rk3566' && (vars.RK3566_INPUTS_TAG || 'rk3566-inputs-v1') || (vars.RK3562_INPUTS_TAG || 'rk3562-inputs-v2') }}
       INPUTS_REPOSITORY: ${{ vars.RK3562_INPUTS_REPOSITORY || github.repository }}
       PYTHONDONTWRITEBYTECODE: '1'
       RELEASE_VERSION: ${{ needs.prepare.outputs.release_version }}
@@ -115,6 +117,12 @@ jobs:
           python3 scripts/test_ci_rk3562.py -v
           python3 scripts/test_rk3562_ports.py -v
           python3 scripts/test_rk3562_release.py -v
+          python3 scripts/test_rk3566_board.py -v
+          python3 scripts/test_rk3566_gpio_clock.py
+          python3 scripts/test_rk817_dc.py
+          python3 scripts/test_rk3562_gpio_clock.py
+          python3 scripts/test_rk3562_charge_leds.py
+          python3 scripts/test_rk3562_charge_trace.py
       - name: Download vendor inputs
         env:
           GH_TOKEN: ${{ github.token }}
@@ -124,25 +132,25 @@ jobs:
             --pattern "$BOARD-inputs.tar.xz" \
             --pattern "$BOARD-inputs.tar.xz.sha256" \
             --dir "$RUNNER_TEMP/vendor-download"
-          python3 scripts/ci_rk3562.py unpack-inputs --board "$BOARD" \
+          python3 scripts/ci_rk3562.py --soc "$SOC" unpack-inputs --board "$BOARD" \
             --archive "$RUNNER_TEMP/vendor-download/$BOARD-inputs.tar.xz" \
             --output "$RUNNER_TEMP/vendor-inputs"
       - name: Build U-Boot and verify board firmware
         run: |
           set -o pipefail
-          ./build_uboot_rk3562_board.sh --board "$BOARD" \
+          python3 scripts/build_rk3562_board.py --soc "$SOC" --board "$BOARD" \
             --input-dir "$RUNNER_TEMP/vendor-inputs" \
             --dtb-mode "$DTB_MODE" \
             --output "$RUNNER_TEMP/board-build" 2>&1 | tee "$RUNNER_TEMP/build-console.log"
       - name: Package images, configuration and provenance
         run: |
-          python3 scripts/ci_rk3562.py package --board "$BOARD" \
+          python3 scripts/ci_rk3562.py --soc "$SOC" package --board "$BOARD" \
             --build-dir "$RUNNER_TEMP/board-build" --output dist \
             --version "$RELEASE_VERSION" --date "$RELEASE_DATE"
       - name: Upload release bundle
         uses: actions/upload-artifact@v4
         with:
-          name: rk3562-board-${{ matrix.board }}-${{ env.DTB_MODE }}
+          name: rk356x-board-${{ matrix.soc }}-${{ matrix.board }}-${{ env.DTB_MODE }}
           path: dist/*
           if-no-files-found: error
           retention-days: 30
@@ -150,24 +158,27 @@ jobs:
         if: env.DTB_MODE == 'embedded'
         uses: actions/upload-artifact@v4
         with:
-          name: rk3562-ports-input-${{ matrix.board }}
+          name: ports-input-${{ matrix.soc }}-${{ matrix.board }}
           path: |
             ${{ runner.temp }}/board-build/board-build.json
             ${{ runner.temp }}/board-build/board-mmc.json
             ${{ runner.temp }}/board-build/board-power.json
-            ${{ runner.temp }}/board-build/rk3562-uboot-16m.bin
+            ${{ runner.temp }}/board-build/${{ matrix.soc }}-uboot-16m.bin
           if-no-files-found: error
           retention-days: 7
       - name: Upload failed build log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: rk3562-${{ matrix.board }}-${{ env.DTB_MODE }}-failure
+          name: rk356x-${{ matrix.soc }}-${{ matrix.board }}-${{ env.DTB_MODE }}-failure
           path: ${{ runner.temp }}/build-console.log
           if-no-files-found: ignore
           retention-days: 7
 
   ports:
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.ports_matrix) }}
     needs: [prepare, build]
     if: needs.prepare.outputs.dtb_mode == 'embedded'
     runs-on: ubuntu-22.04
@@ -185,21 +196,21 @@ jobs:
           sudo apt-get install -y --no-install-recommends python3-pil fonts-noto-cjk
       - uses: actions/download-artifact@v4
         with:
-          pattern: rk3562-ports-input-*
+          pattern: ports-input-${{ matrix.soc }}-*
           path: ${{ runner.temp }}/ports-inputs
           merge-multiple: false
       - name: Test the combined package builder
         run: python3 scripts/test_package_rk3562_ports.py -v
       - name: Build the installable Ports ZIP
         env:
-          BOARDS: ${{ join(fromJSON(needs.prepare.outputs.matrix).board, ',') }}
+          BOARDS: ${{ matrix.boards }}
           PUBLISH_RELEASE: ${{ needs.prepare.outputs.publish }}
         run: |
           flags=()
           if [[ "$PUBLISH_RELEASE" == true ]]; then
             flags+=(--require-all)
           fi
-          python3 scripts/package_rk3562_ports.py \
+          python3 scripts/package_rk3562_ports.py --soc "${{ matrix.soc }}" \
             --build-root "$RUNNER_TEMP/ports-inputs" \
             --expected-boards "$BOARDS" --source-commit "$GITHUB_SHA" --require-clean \
             --output "$RUNNER_TEMP/ports-package" --archive-dir dist \
@@ -207,7 +218,7 @@ jobs:
       - name: Upload the installable Ports ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: rk3562-ports
+          name: ports-${{ matrix.soc }}
           path: dist/*
           if-no-files-found: error
           retention-days: 30
@@ -221,8 +232,9 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: rk3562-ports
+          pattern: ports-rk*
           path: dist
+          merge-multiple: true
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -234,21 +246,25 @@ jobs:
           DTB_MODE: ${{ needs.prepare.outputs.dtb_mode }}
         run: |
           tag="$RELEASE_TAG"
-          ports_zip="rk3562-update-uboot-ports-$RELEASE_DATE-v$RELEASE_VERSION.zip"
-          (cd dist && sha256sum -c "$ports_zip.sha256")
+          ports_zips=()
+          for soc in rk3562 rk3566; do
+            ports_zip="$soc-update-uboot-ports-$RELEASE_DATE-v$RELEASE_VERSION.zip"
+            (cd dist && sha256sum -c "$ports_zip.sha256")
+            ports_zips+=("dist/$ports_zip")
+          done
           cat > release-notes.txt <<EOF
-          RK3562 U-Boot v$RELEASE_VERSION ($RELEASE_DATE).
+          RK356x U-Boot v$RELEASE_VERSION ($RELEASE_DATE).
           Charging DTB mode: $DTB_MODE.
 
-          For installation, download rk3562-update-uboot-ports-$RELEASE_DATE-v$RELEASE_VERSION.zip and extract
-          its contents directly into /roms/ports/ (no extra enclosing folder).
-          Run Update U-Boot from Ports; it selects the image for your DT model.
-          The ZIP contains all supported boards. Updating is manual; the updater
-          backs up the boot area and verifies the written image before reporting success.
+          Download the Ports ZIP for your platform:
+          - RK3562 (NGP45H, Pocket AIS): rk3562-update-uboot-ports-$RELEASE_DATE-v$RELEASE_VERSION.zip
+          - RK3566 (Powkiddy X35H): rk3566-update-uboot-ports-$RELEASE_DATE-v$RELEASE_VERSION.zip
 
-          This Ports ZIP is the only release download needed. Per-board build
-          archives and checksum files remain available in Actions Artifacts.
-          The ZIP includes checksums and build/validation records for all boards.
+          Extract directly into /roms/ports/ and run Update U-Boot.
+          It selects the exact image for your DT model, backs up the boot area
+          and verifies the written image. Each platform ZIP contains all its boards.
+          Per-board archives and separate checksum files remain in Actions Artifacts.
+          Build checks do not establish hardware boot or charging validation.
           Source revision: $SOURCE_SHA.
           EOF
           if gh release view "$tag" >/dev/null 2>&1; then
@@ -259,8 +275,8 @@ jobs:
             fi
           else
             gh release create "$tag" --target "$SOURCE_SHA" \
-              --title "RK3562 U-Boot v$RELEASE_VERSION ($RELEASE_DATE)" --notes-file release-notes.txt \
+              --title "RK356x U-Boot v$RELEASE_VERSION ($RELEASE_DATE)" --notes-file release-notes.txt \
               --draft --latest=false
           fi
-          gh release upload "$tag" "dist/$ports_zip" --clobber
+          gh release upload "$tag" "${ports_zips[@]}" --clobber
           gh release edit "$tag" --draft=false --latest=true

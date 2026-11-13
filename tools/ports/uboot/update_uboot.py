@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0+
-"""Update the running RK3562 boot card from an exact DT model mapping."""
+"""Update the running RK356x boot card from an exact DT model mapping."""
 
 import argparse
 from datetime import datetime, timezone
@@ -42,9 +42,9 @@ def choose_device(config, model, compatible):
         raise ValueError("Invalid board ID")
     if device["image"] != device["id"] + "-uboot.bin":
         raise ValueError("Image filename must match the board ID")
-    # These entries describe the current RK3562 pre-partition image format.
+    # These entries describe the current RK356x pre-partition image format.
     if device["offset"] != 64 * SECTOR or device["size"] != 16 * 1024 * 1024 - 64 * SECTOR:
-        raise ValueError("Unsupported RK3562 image layout")
+        raise ValueError("Unsupported RK356x image layout")
     if not re.fullmatch(r"[0-9a-f]{64}", device["sha256"]):
         raise ValueError("Invalid image SHA-256")
     return device

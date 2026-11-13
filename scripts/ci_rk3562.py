@@ -11,26 +11,39 @@ import re
 import sys
 import tarfile
 
-from build_rk3562_board import PROFILES, ROOT, input_file, load_profile, sha256, verify_snapshot
+from build_rk3562_board import PROFILES, ROOT, board_soc, input_file, load_profile, sha256, verify_snapshot
 from rk3562_release import release_identity
 
 
-def profile_for(board):
+def profile_paths(soc="rk3562"):
+    families = ("rk3562", "rk3566") if soc == "all" else (soc,)
+    if any(s not in ("rk3562", "rk3566") for s in families):
+        raise ValueError("unsupported board SoC")
+    return [p for s in families for p in sorted(PROFILES.with_name(s + "-profiles").glob("*/board.json"))]
+
+
+def profile_for(board, soc="rk3562"):
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", board):
         raise ValueError("invalid board id: " + board)
-    profile = load_profile(PROFILES / board / "board.json")
+    matches = [p for p in profile_paths(soc) if p.parent.name == board]
+    if len(matches) != 1:
+        raise FileNotFoundError("expected a unique board profile: " + board)
+    profile = load_profile(matches[0])
     if profile["id"] != board:
         raise ValueError("board id and profile directory differ")
     return profile
 
 
-def matrix(boards):
-    selected = ([path.parent.name for path in sorted(PROFILES.glob("*/board.json"))]
+def matrix(boards, soc="rk3562"):
+    selected = ([path.parent.name for path in profile_paths(soc)]
                 if boards == "all" else [name.strip() for name in boards.split(",")])
     if not selected or len(set(selected)) != len(selected):
         raise ValueError("select at least one board, without duplicates")
     for board in selected:
-        profile_for(board)
+        profile_for(board, soc)
+    if soc == "all":
+        return {"include": [{"board": board, "soc": board_soc(profile_for(board, soc))}
+                            for board in selected]}
     return {"board": selected}
 
 
@@ -57,8 +70,8 @@ def write_checksum(path):
     Path(str(path) + ".sha256").write_text(f"{sha256(path)}  {path.name}\n")
 
 
-def pack_inputs(board, data_dir, output):
-    profile = profile_for(board)
+def pack_inputs(board, data_dir, output, soc="rk3562"):
+    profile = profile_for(board, soc)
     verify_snapshot(data_dir, board)
     # Include only the build inputs; omit host addresses, diagnostics and backups.
     files = {name: input_file(data_dir, name).read_bytes() for name in input_names(profile)}
@@ -74,8 +87,8 @@ def pack_inputs(board, data_dir, output):
     return path
 
 
-def unpack_inputs(board, path, output):
-    profile = profile_for(board)
+def unpack_inputs(board, path, output, soc="rk3562"):
+    profile = profile_for(board, soc)
     checksum = Path(str(path) + ".sha256").read_text().strip().split()
     if (len(checksum) != 2 or checksum[1] != path.name
             or not re.fullmatch(r"[0-9a-f]{64}", checksum[0])
@@ -107,9 +120,10 @@ def unpack_inputs(board, path, output):
         destination.write_bytes(data)
 
 
-def package(board, build_dir, output, version=None, release_date=None):
-    identity = release_identity(version, release_date)
-    profile_for(board)
+def package(board, build_dir, output, version=None, release_date=None, soc="rk3562"):
+    profile = profile_for(board, soc)
+    soc = board_soc(profile)
+    identity = release_identity(version, release_date, soc=soc)
     metadata = json.loads((build_dir / "board-build.json").read_text())
     if metadata["board_id"] != board or metadata["dtb_only"]:
         raise ValueError("release requires a full build of the selected board")
@@ -117,7 +131,7 @@ def package(board, build_dir, output, version=None, release_date=None):
     if mode not in ("embedded", "external") or not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("invalid build mode or source commit")
     artifacts = metadata["artifacts"]
-    for required in ("uboot.img", "idblock.img", "rk3562-uboot-16m.bin", "u-boot.config"):
+    for required in ("uboot.img", "idblock.img", soc + "-uboot-16m.bin", "u-boot.config"):
         if required not in artifacts:
             raise ValueError("missing release image/configuration: " + required)
     for name, digest in artifacts.items():
@@ -125,7 +139,7 @@ def package(board, build_dir, output, version=None, release_date=None):
             raise ValueError("build artifact checksum mismatch: " + name)
     files = {name: input_file(build_dir, name) for name in [*artifacts, "board-build.json"]}
     sums = "".join(f"{sha256(path)}  {name}\n" for name, path in sorted(files.items()))
-    stem = f"rk3562-{board}-{mode}-{identity['release_date']}-v{identity['release_version']}"
+    stem = f"{soc}-{board}-{mode}-{identity['release_date']}-v{identity['release_version']}"
     output.mkdir(parents=True, exist_ok=True)
     destination = output / (stem + ".tar.xz")
     with tarfile.open(destination, "w:xz") as archive:
@@ -138,6 +152,7 @@ def package(board, build_dir, output, version=None, release_date=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--soc", choices=("rk3562", "rk3566", "all"), default="rk3562")
     commands = parser.add_subparsers(dest="command", required=True)
     select = commands.add_parser("matrix")
     select.add_argument("--boards", default="all")
@@ -157,14 +172,20 @@ def main():
     bundle.add_argument("--date", help="release date, default: current date in Asia/Shanghai")
     args = parser.parse_args()
     if args.command == "matrix":
-        print("matrix=" + json.dumps(matrix(args.boards), separators=(",", ":")))
+        result = matrix(args.boards, args.soc)
+        print("matrix=" + json.dumps(result, separators=(",", ":")))
+        if args.soc == "all":
+            ports = {"include": [{"soc": s, "boards": ",".join(row["board"] for row in result["include"] if row["soc"] == s)}
+                                 for s in sorted({row["soc"] for row in result["include"]})]}
+            print("ports_matrix=" + json.dumps(ports, separators=(",", ":")))
     elif args.command == "pack-inputs":
-        data = args.input_dir or ROOT / "board-data/rk3562" / args.board
-        print(pack_inputs(args.board, data, args.output))
+        soc = board_soc(profile_for(args.board, args.soc))
+        data = args.input_dir or ROOT / ("board-data/" + soc) / args.board
+        print(pack_inputs(args.board, data, args.output, args.soc))
     elif args.command == "unpack-inputs":
-        unpack_inputs(args.board, args.archive, args.output)
+        unpack_inputs(args.board, args.archive, args.output, args.soc)
     else:
-        print(package(args.board, args.build_dir, args.output, args.version, args.date))
+        print(package(args.board, args.build_dir, args.output, args.version, args.date, args.soc))
 
 
 if __name__ == "__main__":

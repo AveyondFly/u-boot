@@ -50,7 +50,7 @@
 
 struct rockchip_gpio_priv {
 	struct rockchip_gpio_regs *regs;
-#ifdef CONFIG_ROCKCHIP_RK3562
+#if defined(CONFIG_ROCKCHIP_RK3562) || defined(CONFIG_ROCKCHIP_RK3568)
 	struct clk pclk;
 #endif
 	struct udevice *pinctrl;
@@ -137,8 +137,8 @@ static int rockchip_gpio_probe(struct udevice *dev)
 	int id = -1, ret;
 
 	priv->regs = dev_read_addr_ptr(dev);
-#ifdef CONFIG_ROCKCHIP_RK3562
-	/* RK3562 loaders may leave unused GPIO banks clock-gated. */
+#if defined(CONFIG_ROCKCHIP_RK3562) || defined(CONFIG_ROCKCHIP_RK3568)
+	/* RK356x loaders may leave unused GPIO banks clock-gated. */
 	ret = clk_get_by_index(dev, 0, &priv->pclk);
 	if (ret)
 		return ret;

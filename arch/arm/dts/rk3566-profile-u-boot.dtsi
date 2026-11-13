@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: GPL-2.0+
+/* Early devices only; board hardware and rails come from its own vendor DTB. */
+/ {
+	aliases {
+		mmc0 = &sdhci;
+		mmc1 = &sdmmc0;
+		/delete-property/ mmc2;
+	};
+	chosen {
+		stdout-path = &uart2;
+		u-boot,spl-boot-order = &sdmmc0, &sdhci;
+	};
+	secure-otp@fe3a0000 {
+		compatible = "rockchip,rk3568-secure-otp";
+		reg = <0 0xfe3a0000 0 0x4000>;
+		secure_conf = <0xfdd18008>;
+		mask_addr = <0xfe880000>;
+		cru_rst_addr = <0xfdd20470>;
+		u-boot,dm-spl;
+	};
+};
+
+&uart2 { clock-frequency = <24000000>; u-boot,dm-spl; };
+&grf { status = "okay"; u-boot,dm-spl; };
+&pmugrf { u-boot,dm-spl; };
+&cru { status = "okay"; u-boot,dm-spl; };
+&pmucru { u-boot,dm-spl; };
+&crypto { status = "okay"; u-boot,dm-spl; };
+&rng { status = "okay"; u-boot,dm-pre-reloc; };
+&saradc { u-boot,dm-pre-reloc; };
+&psci { u-boot,dm-pre-reloc; };
+&pinctrl { u-boot,dm-spl; };
+&gpio0 { u-boot,dm-spl; };
+&gpio1 { u-boot,dm-spl; };
+&gpio2 { u-boot,dm-spl; };
+&sdhci { u-boot,dm-spl; };
+&sdmmc0 { u-boot,dm-spl; };
+&sdmmc0_pins { u-boot,dm-spl; };
+&sdmmc0_bus4 { u-boot,dm-spl; };
+&sdmmc0_clk { u-boot,dm-spl; };
+&sdmmc0_cmd { u-boot,dm-spl; };
+&sdmmc0_det { u-boot,dm-spl; };
+&pcfg_pull_none { u-boot,dm-spl; };
+&pcfg_pull_up { u-boot,dm-spl; };
+&pcfg_pull_none_drv_level_1 { u-boot,dm-spl; };
+&pcfg_pull_none_drv_level_2 { u-boot,dm-spl; };
+&pcfg_pull_up_drv_level_1 { u-boot,dm-spl; };
+&pcfg_pull_up_drv_level_2 { u-boot,dm-spl; };
+
+/* TF2 and Wi-Fi remain in kern-fdt, without early boot initialization. */

@@ -1,9 +1,10 @@
 ROCKNIX Ports U-Boot updater
 ==========================
 
-从 GitHub Release 下载 rk3562-update-uboot-ports-YYYY-MM-DD-vX.Y.Z.zip，将内容
+从 GitHub Release 下载与本机平台对应的 rk3562- 或 rk3566-update-uboot-ports-
+YYYY-MM-DD-vX.Y.Z.zip，将内容
 直接解压到 /roms/ports/，不要再套一层目录，然后刷新 Ports 游戏列表。
-包内包含本次发布支持的全部机型；运行 Update U-Boot 后自动选择本机镜像。
+每个平台的包内包含本次发布支持的该平台全部机型；运行 Update U-Boot 后自动选择本机镜像。
 重新解压覆盖同名程序/镜像即可更新安装包，保留原有 backups 和 logs 目录。
 
 安装位置：
@@ -15,8 +16,8 @@ ROCKNIX Ports U-Boot updater
 
 在 Ports 中运行 Update U-Boot，会自动读取运行中设备树的 model/compatible，
 按 devices.json 精确匹配机型及二进制，更新 /flash 所在启动卡的 U-Boot。
-当前支持 Xifan NGP45H（ngp45h-uboot.bin）和 Pocket AIS
-（pocket-ais-uboot.bin），均内嵌各自的充电 DTB。
+RK3562 包支持 Xifan NGP45H 和 Pocket AIS；RK3566 包支持 Powkiddy x35h。
+均内嵌各自的充电 DTB。
 不固定 mmcblk 编号。遇到未知/重复机型、兼容性不符、镜像校验不符、启动盘
 无法识别或写入区域与分区重叠，均会中止。
 

@@ -479,7 +479,19 @@ static int rk3568_pmuclk_set_parent(struct clk *clk, struct clk *parent)
 	}
 }
 
+static int rk3568_pmuclk_enable(struct clk *clk)
+{
+	struct rk3568_pmuclk_priv *priv = dev_get_priv(clk->dev);
+
+	if (clk->id == PCLK_GPIO0) {
+		rk_clrreg(&priv->pmucru->pmu_clkgate_con[0], BIT(2));
+		rk_clrreg(&priv->pmucru->pmu_clkgate_con[1], BIT(9));
+	}
+	return 0;
+}
+
 static struct clk_ops rk3568_pmuclk_ops = {
+	.enable = rk3568_pmuclk_enable,
 	.get_rate = rk3568_pmuclk_get_rate,
 	.set_rate = rk3568_pmuclk_set_rate,
 	.set_parent = rk3568_pmuclk_set_parent,
@@ -3237,7 +3249,26 @@ static int rk3568_clk_set_parent(struct clk *clk, struct clk *parent)
 }
 #endif
 
+static int rk3568_clk_enable(struct clk *clk)
+{
+	struct rk3568_clk_priv *priv = dev_get_priv(clk->dev);
+
+	/* GPIO APB clocks, matching clk-rk3568.c in the kernel clock driver. */
+	switch (clk->id) {
+	case PCLK_GPIO1:
+	case PCLK_GPIO2:
+	case PCLK_GPIO3:
+	case PCLK_GPIO4:
+		rk_clrreg(&priv->cru->clkgate_con[26], BIT(1));
+		rk_clrreg(&priv->cru->clkgate_con[31],
+			  BIT(2 + clk->id - PCLK_GPIO1));
+		break;
+	}
+	return 0;
+}
+
 static struct clk_ops rk3568_clk_ops = {
+	.enable = rk3568_clk_enable,
 	.get_rate = rk3568_clk_get_rate,
 	.set_rate = rk3568_clk_set_rate,
 	.get_phase = rk3568_clk_get_phase,

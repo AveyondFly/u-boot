@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0+
-"""Build isolated RK3562 board profiles from saved vendor inputs."""
+"""Build isolated RK356x board profiles from saved vendor inputs."""
 
 import argparse
 from datetime import datetime, timezone
@@ -27,6 +27,13 @@ PROFILES = ROOT / "board/rockchip/rk3562-profiles"
 DEFAULT_CROSS = "/opt/toolchains/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-"
 
 
+def board_soc(profile):
+    soc = profile.get("soc", "rk3562")
+    if soc not in ("rk3562", "rk3566"):
+        raise ValueError("unsupported board SoC: " + soc)
+    return soc
+
+
 def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -45,6 +52,7 @@ def load_profile(path):
         raise ValueError("provide exactly one of inputs.linux_dtb or linux_dts")
     if not profile.get("overlays"):
         raise ValueError("provide board charging overlays explicitly")
+    board_soc(profile)
     return profile
 
 
@@ -98,8 +106,9 @@ def prepare_dtb(profile, profile_dir, data_dir, stage):
         base = stage / "base.dtb"
         run("dtc", "-@", "-I", "dts", "-O", "dtb", "-i", source.parent,
             "-o", base, source)
-    if "rockchip,rk3562" not in prop(base, "/", "compatible", "s").split():
-        raise ValueError("base DTB is not compatible with rockchip,rk3562")
+    soc = board_soc(profile)
+    if "rockchip," + soc not in prop(base, "/", "compatible", "s").split():
+        raise ValueError("base DTB is not compatible with rockchip," + soc)
     check_properties(base, profile.get("checks", []))
     shutil.copy2(base, stage / "vendor-base.dtb")
     overlays = []
@@ -111,7 +120,7 @@ def prepare_dtb(profile, profile_dir, data_dir, stage):
             "-o", target, overlay_source)
         overlays.append(target)
         sources.append(overlay_source)
-    dtb = stage / "rk3562-charge.dtb"
+    dtb = stage / (soc + "-charge.dtb")
     run("fdtoverlay", "-i", base, "-o", dtb, *overlays)
     check_properties(dtb, profile.get("output_checks", []))
     verify_power_configuration(stage / "vendor-base.dtb", dtb)
@@ -119,6 +128,7 @@ def prepare_dtb(profile, profile_dir, data_dir, stage):
 
 
 def render_config(profile, mode, path):
+    soc = board_soc(profile)
     base = ROOT / "configs" / profile["defconfig"]
     values = {}
     for line in base.read_text().splitlines():
@@ -138,10 +148,10 @@ def render_config(profile, mode, path):
         raise ValueError("board defconfig must select its own control_dtb.name")
     values.update({
         "ROCKCHIP_EARLY_DISTRO_DTB": "y" if mode == "external" else "n",
-        "ROCKCHIP_EARLY_DISTRO_DTB_PATH": json.dumps(profile.get("dtb_path", "/rk3562-charge.dtb")),
+        "ROCKCHIP_EARLY_DISTRO_DTB_PATH": json.dumps(profile.get("dtb_path", "/" + soc + "-charge.dtb")),
         "EMBED_KERNEL_DTB": "y" if mode == "embedded" else "n",
         "EMBED_KERNEL_DTB_ALWAYS": "y" if mode == "embedded" else "n",
-        "EMBED_KERNEL_DTB_PATH": '"dts/rk3562-charge.dtb"',
+        "EMBED_KERNEL_DTB_PATH": json.dumps("dts/" + soc + "-charge.dtb"),
     })
     path.write_text("".join(f"# CONFIG_{key} is not set\n" if value == "n"
                             else f"CONFIG_{key}={value}\n"
@@ -155,10 +165,18 @@ def fit_payload(image, name):
     return image.read_bytes()[offset:offset + size]
 
 
+def firmware_payloads(records):
+    # decode_bl31.py can renumber ATF nodes while sorting ELF load segments.
+    # Compare every payload by kind, address, length and bytes, including duplicates.
+    return sorted(("atf" if r["name"].startswith("atf-") else r["name"],
+                   r["load"], r["size"], r["sha256"]) for r in records)
+
+
 def prepare_control_tree(profile, profile_dir, dtb, stage, references):
     control = profile.get("control_dtb", {})
     name = control.get("name", "")
-    if not re.fullmatch(r"rk3562-[a-z0-9][a-z0-9_-]*", name):
+    soc = board_soc(profile)
+    if not re.fullmatch(soc + r"-[a-z0-9][a-z0-9_-]*", name):
         raise ValueError("full board builds require a board-specific control_dtb.name")
     if control.get("power_init") != "board-dtb":
         raise ValueError("unsupported early power policy")
@@ -169,7 +187,7 @@ def prepare_control_tree(profile, profile_dir, dtb, stage, references):
     if not (dts / (name + ".dts")).is_file():
         raise ValueError("board control DTS is missing: " + name)
     vendor_dtsi(dtb, dts / (name + "-vendor.dtsi"))
-    policy = ROOT / "arch/arm/dts/rk3562-profile-u-boot.dtsi"
+    policy = ROOT / ("arch/arm/dts/" + soc + "-profile-u-boot.dtsi")
     shutil.copy2(policy, dts / policy.name)
     if control.get("mmc_reference") != "vendor-boot":
         raise ValueError("boot storage requires the board's vendor early DTBs")
@@ -198,6 +216,7 @@ def validate_control_tree(profile, artifacts):
 
 
 def build(profile, profile_path, data_dir, output, mode, dtb_only):
+    soc = board_soc(profile)
     profile_dir = profile_path.parent
     verify_snapshot(data_dir, profile["id"])
     if output == data_dir or output.is_relative_to(data_dir) or data_dir.is_relative_to(output):
@@ -230,7 +249,7 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                 verify_vendor_references(profile["control_dtb"], references)
                 source_overlay, policy = prepare_control_tree(profile, profile_dir, dtb, stage, references)
                 sources.append(policy)
-                extract_fit(uboot, stage / "firmware")
+                extract_fit(uboot, stage / "firmware", soc=soc)
                 extract_idb(idb, stage / "original-ddr.bin", 0)
                 config = stage / "board_defconfig"
                 sources.append(render_config(profile, mode, config))
@@ -238,8 +257,9 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                 for key in ("DDR_BIN", "IDB_IMAGE", "BL31_BIN", "BL32_BIN", "EARLY_DTB", "SOURCE_OVERLAY", "SPL_DTB_OVERLAY"):
                     env.pop(key, None)
                 env.update({
+                    "SOC": soc,
                     "DEFCONFIG": profile["defconfig"], "DEFCONFIG_FILE": str(config),
-                    "IDB_IMAGE": str(idb), "BL31_BIN": str(stage / "firmware/rk3562_bl31_vendor.elf"),
+                    "IDB_IMAGE": str(idb), "BL31_BIN": str(stage / ("firmware/" + soc + "_bl31_vendor.elf")),
                     "BL32_BIN": str(stage / "firmware/optee.bin"), "OUT_DIR": str(artifacts),
                     "CROSS_COMPILE": os.environ.get("CROSS_COMPILE", DEFAULT_CROSS),
                     "SPL_DTB_OVERLAY": str(stage / "spl-mmc.dtbo"),
@@ -270,9 +290,10 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                              io_domain_driver="CONFIG_IO_DOMAIN=y\n" in
                              (artifacts / "u-boot.config").read_text())
                 (artifacts / "board-power.json").write_text(json.dumps(power, indent=2) + "\n")
-                extract_fit(artifacts / "uboot.img", stage / "rebuilt-firmware")
+                extract_fit(artifacts / "uboot.img", stage / "rebuilt-firmware", soc=soc)
                 expected = (stage / "firmware/firmware.json").read_bytes()
-                if expected != (stage / "rebuilt-firmware/firmware.json").read_bytes():
+                rebuilt = (stage / "rebuilt-firmware/firmware.json").read_bytes()
+                if firmware_payloads(json.loads(expected)) != firmware_payloads(json.loads(rebuilt)):
                     raise ValueError("rebuilt BL31/BL32 differs from this board's vendor firmware")
                 (artifacts / "vendor-firmware.json").write_bytes(expected)
                 extract_idb(artifacts / "idblock.img", stage / "rebuilt-ddr.bin", 0)
@@ -281,7 +302,8 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                 if mode == "embedded" and fit_payload(artifacts / "uboot.img", "kern-fdt") != dtb.read_bytes():
                     raise ValueError("embedded charging DTB differs from the generated DTB")
                 cfg = (artifacts / "u-boot.config").read_text()
-                for key in ["ROCKCHIP_RK3562", "CHARGE_ANIMATION", "DM_KEY", "LED"] + profile.get("required_kconfig", []):
+                soc_symbol = "ROCKCHIP_RK3568" if soc == "rk3566" else "ROCKCHIP_RK3562"
+                for key in [soc_symbol, "CHARGE_ANIMATION", "DM_KEY", "LED"] + profile.get("required_kconfig", []):
                     if f"CONFIG_{key}=y\n" not in cfg:
                         raise ValueError("required Kconfig option disabled: " + key)
                 required = "CONFIG_EMBED_KERNEL_DTB_ALWAYS=y\n" if mode == "embedded" else "CONFIG_ROCKCHIP_EARLY_DISTRO_DTB=y\n"
@@ -291,7 +313,7 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
             for overlay in overlays:
                 shutil.copy2(overlay, artifacts / overlay.name)
             with (artifacts / "dtc-warnings.log").open("w") as warnings:
-                run("dtc", "-I", "dtb", "-O", "dts", "-o", artifacts / "rk3562-charge.dts",
+                run("dtc", "-I", "dtb", "-O", "dts", "-o", artifacts / (soc + "-charge.dts"),
                     dtb, stderr=warnings)
             if not dtb_only:
                 shutil.copy2(config, artifacts / "requested_defconfig")
@@ -299,7 +321,7 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                 ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
             git_diff = subprocess.check_output(["git", "diff", "HEAD", "--"], cwd=ROOT)
             metadata = {
-                "schema_version": 1, "board_id": profile["id"], "dtb_mode": mode,
+                "schema_version": 1, "soc": soc, "board_id": profile["id"], "dtb_mode": mode,
                 "dtb_only": dtb_only, "built_at": datetime.now(timezone.utc).isoformat(),
                 "source_commit": git_commit,
                 "tracked_source_diff_sha256": hashlib.sha256(git_diff).hexdigest(),
@@ -308,7 +330,7 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
                     "scripts/extract_rk3562_fit_firmware.py", "scripts/extract_rockchip_rkns.py",
                     "scripts/rk3562_control_dtb.py", "scripts/rk3562_mmc.py")},
                 "control_dtb": profile.get("control_dtb"),
-                "dtb_install_path": profile.get("dtb_path", "/rk3562-charge.dtb") if mode == "external" else None,
+                "dtb_install_path": profile.get("dtb_path", "/" + soc + "-charge.dtb") if mode == "external" else None,
                 "inputs": [{"path": str(path), "sha256": sha256(path)} for path in sources],
                 "artifacts": {p.name: sha256(p) for p in artifacts.iterdir() if p.is_file()},
             }
@@ -330,6 +352,7 @@ def build(profile, profile_path, data_dir, output, mode, dtb_only):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--soc", choices=("rk3562", "rk3566"), default="rk3562")
     parser.add_argument("--board")
     parser.add_argument("--profile", type=Path, help="explicit board.json for a new board")
     parser.add_argument("--list-boards", action="store_true")
@@ -339,8 +362,9 @@ def main():
                         help="default: embedded; external must be explicitly selected")
     parser.add_argument("--dtb-only", action="store_true", help="generate DTB without rkbin/compiler/firmware")
     args = parser.parse_args()
+    profiles = ROOT / ("board/rockchip/" + args.soc + "-profiles")
     if args.list_boards:
-        for path in sorted(PROFILES.glob("*/board.json")):
+        for path in sorted(profiles.glob("*/board.json")):
             p = load_profile(path)
             print(f"{p['id']}: {p.get('description', '')}")
         return
@@ -348,16 +372,19 @@ def main():
         parser.error("provide exactly one of --board or --profile")
     if args.board and not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", args.board):
         parser.error("invalid board id")
-    path = args.profile.resolve() if args.profile else PROFILES / args.board / "board.json"
+    path = args.profile.resolve() if args.profile else profiles / args.board / "board.json"
     profile = load_profile(path)
     if args.board and profile["id"] != args.board:
         raise ValueError("board id and profile directory differ")
     mode = args.dtb_mode or profile.get("dtb_mode", "embedded")
     if mode not in ("external", "embedded"):
         raise ValueError("invalid profile DTB mode")
-    data_dir = (args.input_dir or ROOT / "board-data/rk3562" / profile["id"]).resolve()
+    soc = board_soc(profile)
+    if not args.profile and soc != args.soc:
+        raise ValueError("board profile belongs to another SoC")
+    data_dir = (args.input_dir or ROOT / ("board-data/" + soc) / profile["id"]).resolve()
     suffix = "dtb" if args.dtb_only else mode
-    output = (args.output or ROOT / "build-rk3562-boards" / profile["id"] / suffix).resolve()
+    output = (args.output or ROOT / ("build-" + soc + "-boards") / profile["id"] / suffix).resolve()
     build(profile, path, data_dir, output, mode, args.dtb_only)
 
 
@@ -365,4 +392,4 @@ if __name__ == "__main__":
     try:
         main()
     except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as exc:
-        sys.exit("RK3562 board build failed: " + str(exc))
+        sys.exit("RK356x board build failed: " + str(exc))

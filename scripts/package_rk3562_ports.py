@@ -54,12 +54,14 @@ def sha256(path):
 
 def build_ports(build_dirs, destination, font, expected_boards=None,
                 require_all=False, source_commit=None, require_clean=False,
-                version=None, release_date=None):
-    identity = release_identity(version, release_date)
+                version=None, release_date=None, soc="rk3562"):
+    identity = release_identity(version, release_date, soc=soc)
     config = json.loads((ROOT / "tools/ports/uboot/devices.json").read_text())
     if config.get("schema_version") != 1:
         raise ValueError("unsupported Ports device configuration")
-    profiles = {path.parent.name for path in PROFILES.glob("*/board.json")}
+    config["devices"] = [d for d in config["devices"] if d["compatible"] == "rockchip," + soc]
+    profile_root = PROFILES.with_name(soc + "-profiles")
+    profiles = {path.parent.name for path in profile_root.glob("*/board.json")}
     registered = [device["id"] for device in config["devices"]]
     if len(registered) != len(set(registered)):
         raise ValueError("duplicate device registration")
@@ -68,6 +70,8 @@ def build_ports(build_dirs, destination, font, expected_boards=None,
     builds, selected, models, revisions = [], set(), set(), set()
     for build_dir in build_dirs:
         metadata = json.loads((build_dir / "board-build.json").read_text())
+        if metadata.get("soc", "rk3562") != soc:
+            raise ValueError("build belongs to a different SoC")
         matches = [d for d in config["devices"] if d["id"] == metadata["board_id"]]
         if len(matches) != 1 or metadata["dtb_only"] or metadata["dtb_mode"] != "embedded":
             raise ValueError("provide an embedded full build with exactly one registered device")
@@ -88,7 +92,7 @@ def build_ports(build_dirs, destination, font, expected_boards=None,
         if require_clean and diff != hashlib.sha256(b"").hexdigest():
             raise ValueError("CI Ports bundle requires builds from a clean source tree")
         revisions.add((commit, diff))
-        payloads = ("rk3562-uboot-16m.bin", "board-mmc.json", "board-power.json")
+        payloads = (soc + "-uboot-16m.bin", "board-mmc.json", "board-power.json")
         for name in payloads:
             if name not in metadata["artifacts"] or sha256(input_file(build_dir, name)) != metadata["artifacts"][name]:
                 raise ValueError("build artifact checksum mismatch: " + name)
@@ -131,7 +135,7 @@ def build_ports(build_dirs, destination, font, expected_boards=None,
             for name in ("board-build.json", "board-mmc.json", "board-power.json"):
                 shutil.copy2(build_dir / name, data / (device["id"] + "-" + name))
         commit, diff = next(iter(revisions))
-        package = dict(schema_version=1, boards=sorted(selected), source_commit=commit,
+        package = dict(schema_version=1, soc=soc, boards=sorted(selected), source_commit=commit,
                        tracked_source_diff_sha256=diff,
                        contains_all_profiles=selected == profiles)
         package.update(identity)
@@ -155,12 +159,13 @@ def build_ports(build_dirs, destination, font, expected_boards=None,
 
 def archive_ports(directory, output):
     package = json.loads((directory / "uboot/package.json").read_text())
-    identity = release_identity(package.get("release_version"), package.get("release_date"))
+    soc = package.get("soc", "rk3562")
+    identity = release_identity(package.get("release_version"), package.get("release_date"), soc=soc)
     output = output.resolve()
     if output == directory.resolve() or output.is_relative_to(directory.resolve()):
         raise ValueError("archive output must be outside the Ports directory")
     output.mkdir(parents=True, exist_ok=True)
-    archive = output / ("rk3562-update-uboot-ports-" + identity["release_date"] +
+    archive = output / (soc + "-update-uboot-ports-" + identity["release_date"] +
                         "-v" + identity["release_version"] + ".zip")
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as bundle:
         for path in sorted(directory.rglob("*")):
@@ -172,6 +177,7 @@ def archive_ports(directory, output):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--soc", choices=("rk3562", "rk3566"), default="rk3562")
     inputs = parser.add_mutually_exclusive_group(required=True)
     inputs.add_argument("--build-dir", type=Path, action="append")
     inputs.add_argument("--build-root", type=Path, help="directory of downloaded per-board build artifacts")
@@ -189,7 +195,7 @@ def main():
               [path.parent for path in sorted(args.build_root.glob("*/board-build.json"))])
     expected = args.expected_boards.split(",") if args.expected_boards is not None else None
     build_ports(builds, args.output, args.font, expected, args.require_all, args.source_commit,
-                args.require_clean, args.version, args.date)
+                args.require_clean, args.version, args.date, args.soc)
     print(args.output.resolve())
     if args.archive_dir:
         print(archive_ports(args.output, args.archive_dir))

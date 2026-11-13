@@ -22,7 +22,8 @@ class PackageTests(unittest.TestCase):
         source = self.root / "source"
         shutil.copytree(package.ROOT / "tools/ports", source / "tools/ports")
         self.config_path = source / "tools/ports/uboot/devices.json"
-        registered = {d["id"] for d in json.loads(self.config_path.read_text())["devices"]}
+        registered = {d["id"] for d in json.loads(self.config_path.read_text())["devices"]
+                      if d["compatible"] == "rockchip,rk3562"}
         self.boards = ["ngp45h", "pocket-ais"] + sorted(registered - {"ngp45h", "pocket-ais"})
         patcher = patch.object(package, "ROOT", source)
         patcher.start()
@@ -101,7 +102,7 @@ class PackageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "requested board matrix"):
             self.build(expected_boards=["ngp45h"])
         config = json.loads(self.config_path.read_text())
-        config["devices"].pop()
+        config["devices"] = [d for d in config["devices"] if d["id"] != "pocket-ais"]
         self.config_path.write_text(json.dumps(config))
         with self.assertRaisesRegex(ValueError, "registrations must match"):
             self.build(require_all=True)

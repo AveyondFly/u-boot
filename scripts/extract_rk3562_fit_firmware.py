@@ -27,7 +27,9 @@ def integer(image, node, name):
     return value
 
 
-def extract(image, output):
+def extract(image, output, soc="rk3562"):
+    if soc not in ("rk3562", "rk3566"):
+        raise ValueError("unsupported firmware SoC")
     blob = image.read_bytes()
     if blob[:4] != bytes.fromhex("d00dfeed"):
         raise ValueError("input must start with a FIT")
@@ -80,7 +82,7 @@ def extract(image, output):
         struct.pack_into("<IIQQQQQQ", elf, 64 + 56 * index,
                          1, 7, offset, load, load, len(data), len(data), 4096)
         elf.extend(data)
-    (output / "rk3562_bl31_vendor.elf").write_bytes(elf)
+    (output / (soc + "_bl31_vendor.elf")).write_bytes(elf)
     (output / "firmware.json").write_text(json.dumps(records, indent=2) + "\n")
     for record in records:
         print("{name}: load={load}, size={size}, sha256={sha256}".format(**record))

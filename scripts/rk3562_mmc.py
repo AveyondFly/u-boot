@@ -17,9 +17,22 @@ MMC_PATHS = ("/mmc@ff870000", "/mmc@ff880000", "/mmc@ff890000")
 BOOT_MMC = MMC_PATHS[:2]
 
 
+def mmc_paths(tree):
+    return tuple(n for n in tree if re.fullmatch(r"/(?:mmc|dwmmc|sdhci)@[0-9a-f]+", n))
+
+
+def boot_mmc(tree):
+    by_address = {n.split("@")[-1]: n for n in mmc_paths(tree)}
+    addresses = ("fe310000", "fe2b0000") if "fe310000" in by_address else ("ff870000", "ff880000")
+    if any(address not in by_address for address in addresses):
+        raise ValueError("boot DTB must contain eMMC and TF1")
+    return tuple(by_address[address] for address in addresses)
+
+
 def canonical(path):
     # The vendor boot and Linux trees name the same pin group differently.
-    return path.replace("/sdmmc0-pins/", "/sdmmc0/")
+    path = re.sub(r"^/(?:dwmmc|sdhci)@", "/mmc@", path)
+    return path.replace("/sdmmc0-pins/", "/sdmmc0/").replace("/sdmmc0_pins/", "/sdmmc0/")
 
 
 def mmc_configuration(dtb, controllers=None, removed=()):
@@ -27,7 +40,7 @@ def mmc_configuration(dtb, controllers=None, removed=()):
     handles = {int.from_bytes(props["phandle"], "big"): name
                for name, props in tree.items() if "phandle" in props}
     roots = tuple(controllers) if controllers is not None else tuple(
-        name for name in MMC_PATHS if name in tree)
+        name for name in mmc_paths(tree))
     pending, result = list(roots), {}
 
     def references(value, cells=None):
@@ -96,7 +109,7 @@ def verify_mmc_configuration(reference, candidate, controllers=None, removed=())
                      if expected.get(name, {}).get(key) != actual.get(name, {}).get(key)]
         raise ValueError("board MMC configuration changed: " + ", ".join(different))
     return {"controllers": list(controllers) if controllers is not None else
-            [name for name in MMC_PATHS if name in read_tree(reference)],
+            list(mmc_paths(read_tree(reference))),
             "nodes": len(expected),
             "sha256": hashlib.sha256(json.dumps(expected, sort_keys=True).encode()).hexdigest()}
 
@@ -124,7 +137,11 @@ def extract_vendor_trees(idb, image, output):
             tree = read_tree(candidate)
         except (ValueError, IndexError, struct.error, UnicodeDecodeError):
             continue
-        if all(path in tree for path in BOOT_MMC):
+        try:
+            boot_mmc(tree)
+        except ValueError:
+            continue
+        else:
             candidates.append(blob[offset:offset + size])
     if len(candidates) != 1:
         raise ValueError("expected one SPL control DTB with eMMC and TF1")
@@ -146,9 +163,10 @@ def extract_vendor_trees(idb, image, output):
     uboot_dtb.write_bytes(payload)
     for path in (spl_dtb, uboot_dtb):
         tree = read_tree(path)
-        if any(tree.get(node, {}).get("status") != b"okay\0" for node in BOOT_MMC):
+        controllers = boot_mmc(tree)
+        if any(tree.get(node, {}).get("status") != b"okay\0" for node in controllers):
             raise ValueError("vendor boot storage is missing or disabled")
-        if MMC_PATHS[2] in tree:
+        if controllers == BOOT_MMC and MMC_PATHS[2] in tree:
             raise ValueError("vendor early SDIO policy requires explicit review")
     return {"spl": spl_dtb, "uboot": uboot_dtb}
 
@@ -166,6 +184,7 @@ def verify_vendor_references(control, references):
 def write_mmc_include(base, reference, output):
     """Translate vendor boot phandles into the board's generated source tree."""
     tree, vendor = read_tree(base), read_tree(reference)
+    controllers = boot_mmc(vendor)
     handles = {int.from_bytes(v["phandle"], "big"): n
                for n, v in vendor.items() if "phandle" in v}
     targets = {canonical(n): n for n in tree}
@@ -189,14 +208,14 @@ def write_mmc_include(base, reference, output):
 
     lines = ["// Generated from the authenticated vendor U-Boot control DTB."]
     # Pinctrl wiring and drive strength are compared along with the controllers.
-    configuration = mmc_configuration(reference, BOOT_MMC)
+    configuration = mmc_configuration(reference, controllers)
     related = [n for n in vendor if canonical(n) in configuration
                and n.startswith("/pinctrl/")]
-    for source in [*BOOT_MMC, *related]:
+    for source in [*controllers, *related]:
         destination = target(source)
         lines.append(f"&{{{destination}}} {{")
         keys = set(tree[destination])
-        if source in BOOT_MMC:
+        if source in controllers:
             # rk3562-u-boot.dtsi also supplies EVB defaults before this include.
             keys.update(("mmc-hs400-1_8v", "mmc-hs400-enhanced-strobe",
                          "fixed-emmc-driver-type", "bus-width", "pinctrl-0", "pinctrl-names"))
@@ -229,7 +248,7 @@ def write_spl_overlay(uboot_reference, spl_reference, output):
     # Current vendor stages differ only by eMMC HS400 capabilities. Reject
     # other changes until their phandles/deletion semantics are supported.
     allowed = {"mmc-hs400-1_8v", "mmc-hs400-enhanced-strobe"}
-    for index, node in enumerate(BOOT_MMC):
+    for index, node in enumerate(boot_mmc(uboot)):
         differences = {key for key in uboot[node].keys() | spl[node].keys()
                        if uboot[node].get(key) != spl[node].get(key)}
         if differences - allowed or any(spl[node].get(key) != b"" for key in differences):
@@ -248,14 +267,17 @@ def validate_boot_storage(reference, artifacts):
     for stage, name in (("spl", "u-boot-spl.dtb"), ("uboot", "u-boot.dtb")):
         candidate = artifacts / name
         tree = read_tree(candidate)
-        if set(n for n in MMC_PATHS if n in tree) != set(BOOT_MMC):
+        controllers = boot_mmc(tree)
+        if set(mmc_paths(tree)) != set(controllers):
             raise ValueError("early boot must retain exactly eMMC and TF1")
-        info = verify_mmc_configuration(reference[stage], candidate, BOOT_MMC)
-        expected = b"/mmc@ff880000\0/mmc@ff870000\0"
+        reference_controllers = boot_mmc(read_tree(reference[stage]))
+        info = verify_mmc_configuration(reference[stage], candidate, reference_controllers)
+        expected = (controllers[1] + "\0" + controllers[0] + "\0").encode()
         order = tree.get("/chosen", {}).get("u-boot,spl-boot-order", b"")
         if not order.startswith(expected):
             raise ValueError("boot order must prefer TF1 before eMMC")
-        if tree.get("/aliases", {}).get("mmc0") != b"/mmc@ff870000\0" or tree.get("/aliases", {}).get("mmc1") != b"/mmc@ff880000\0":
+        if any(tree.get("/aliases", {}).get("mmc" + str(i)) != (node + "\0").encode()
+               for i, node in enumerate(controllers)):
             raise ValueError("boot MMC aliases are inconsistent")
         info.update(reference_sha256=hashlib.sha256(reference[stage].read_bytes()).hexdigest(),
                     tf1_before_emmc=True)

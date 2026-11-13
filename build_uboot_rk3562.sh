@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
-# RK3562 FIT/IDB backend. Board profiles provide their own firmware and config.
+# RK356x FIT/IDB backend. Board profiles provide their own firmware and config.
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFCONFIG="${DEFCONFIG:-rk3562_defconfig}"
+SOC="${SOC:-rk3562}"
+case "$SOC" in
+  rk3562) TRUST_SOC=RK3562; FIRMWARE_SOC=rk3562; LOADER_PREFIX=rk3562 ;;
+  rk3566) TRUST_SOC=RK3568; FIRMWARE_SOC=rk3568; LOADER_PREFIX=rk356x ;;
+  *) printf 'Unsupported SoC: %s\n' "$SOC" >&2; exit 1 ;;
+esac
+LOADER_SOC="${SOC^^}"
+DEFCONFIG="${DEFCONFIG:-${SOC}_defconfig}"
 DEFCONFIG_FILE="${DEFCONFIG_FILE:-${ROOT_DIR}/configs/${DEFCONFIG}}"
 SOURCE_OVERLAY="${SOURCE_OVERLAY:-}"
 EARLY_DTB="${EARLY_DTB:-}"
@@ -12,7 +19,7 @@ TOOLCHAIN="${TOOLCHAIN:-/home/ubuntu/distribution/build.ROCKNIX-RK3326.aarch64/t
 CROSS_COMPILE="${CROSS_COMPILE:-${TOOLCHAIN}/bin/aarch64-rocknix-linux-gnu-}"
 PYTHON="${PYTHON:-python3}"
 JOBS="${JOBS:-$(nproc)}"
-OUT_DIR="${OUT_DIR:-${ROOT_DIR}/build-rk3562}"
+OUT_DIR="${OUT_DIR:-${ROOT_DIR}/build-${SOC}}"
 
 # This is the first official rkbin revision after RK3562 SPL v1.07 and before
 # BL32 was updated to v1.08.  It contains the firmware versions found in the
@@ -36,7 +43,7 @@ KEEP_WORK="${KEEP_WORK:-0}"
 
 # The eMMC dump contains the official 920 MHz v1.07 binary. Prefer the local
 # byte-identical copy unless the caller supplies DDR_BIN or IDB_IMAGE.
-if [ -z "${DDR_BIN}" ] && [ -z "${IDB_IMAGE}" ] && [ -f "${BUNDLED_DDR_BIN}" ]; then
+if [ "$SOC" = rk3562 ] && [ -z "${DDR_BIN}" ] && [ -z "${IDB_IMAGE}" ] && [ -f "${BUNDLED_DDR_BIN}" ]; then
 	DDR_BIN="${BUNDLED_DDR_BIN}"
 fi
 
@@ -46,7 +53,7 @@ usage() {
 	cat <<EOF
 Usage: $(basename "$0")
 
-Builds RK3562 IDB and FIT images into build-rk3562/ without touching the
+Builds ${SOC} IDB and FIT images into build-${SOC}/ without touching the
 current in-tree build. The bundled rkbin revision provides BL31 v1.21 and
 BL32 v1.07 as reference defaults. Board profiles override DDR/BL31/BL32 with
 their own verified vendor payloads. The bundled DDR matches the older RG43H dump.
@@ -55,7 +62,7 @@ Useful environment overrides:
   TOOLCHAIN, CROSS_COMPILE, JOBS, OUT_DIR
   DEFCONFIG_FILE        Generated board defconfig (copied into staging only)
   SOURCE_OVERLAY        Extra board source files, relative to U-Boot root
-  EARLY_DTB             Board DTB to embed at dts/rk3562-charge.dtb
+  EARLY_DTB             Board DTB to embed at dts/${SOC}-charge.dtb
   RKBIN                 Existing rkbin directory; it is copied before use
   RKBIN_ARCHIVE         Existing rkbin archive (defaults to third_party/rkbin)
   DDR_BIN               Board-specific DDR binary
@@ -66,11 +73,11 @@ EOF
 }
 
 log() {
-	printf '[rk3562] %s\n' "$*"
+	printf '[%s] %s\n' "$SOC" "$*"
 }
 
 die() {
-	printf '[rk3562] ERROR: %s\n' "$*" >&2
+	printf '[%s] ERROR: %s\n' "$SOC" "$*" >&2
 	exit 1
 }
 
@@ -132,8 +139,12 @@ stage_rkbin() {
 
 	RKBIN="${WORK_DIR}/rkbin"
 	[ -x "${RKBIN}/tools/boot_merger" ] || die "rkbin boot_merger is missing"
-	[ -f "${RKBIN}/RKBOOT/RK3562MINIALL.ini" ] || die "RK3562 loader INI is missing"
-	[ -f "${RKBIN}/RKTRUST/RK3562TRUST.ini" ] || die "RK3562 trust INI is missing"
+	[ -f "${RKBIN}/RKBOOT/${LOADER_SOC}MINIALL.ini" ] || die "${SOC} loader INI is missing"
+	[ -f "${RKBIN}/RKTRUST/${TRUST_SOC}TRUST.ini" ] || die "${SOC} trust INI is missing"
+	# Older RK3566 loader INIs omit this flag, although NEWIDB is supported.
+	if ! grep -q '^CREATE_IDB=true' "${RKBIN}/RKBOOT/${LOADER_SOC}MINIALL.ini"; then
+		printf '\nCREATE_IDB=true\n' >> "${RKBIN}/RKBOOT/${LOADER_SOC}MINIALL.ini"
+	fi
 }
 
 install_firmware_override() {
@@ -149,23 +160,23 @@ install_firmware_override() {
 }
 
 apply_firmware_overrides() {
-	local loader_ini="${RKBIN}/RKBOOT/RK3562MINIALL.ini"
-	local trust_ini="${RKBIN}/RKTRUST/RK3562TRUST.ini"
+	local loader_ini="${RKBIN}/RKBOOT/${LOADER_SOC}MINIALL.ini"
+	local trust_ini="${RKBIN}/RKTRUST/${TRUST_SOC}TRUST.ini"
 
 	if [ -n "${DDR_BIN}" ]; then
 		install_firmware_override "${DDR_BIN}" \
-			"bin/custom/rk3562_ddr.bin" "${loader_ini}" \
-			"bin/rk35/rk3562_ddr_[^[:space:]]*\.bin"
+			"bin/custom/${SOC}_ddr.bin" "${loader_ini}" \
+			"bin/rk35/${SOC}_ddr_[^[:space:]]*\.bin"
 	fi
 	if [ -n "${BL31_BIN}" ]; then
 		install_firmware_override "${BL31_BIN}" \
-			"bin/custom/rk3562_bl31_custom.elf" "${trust_ini}" \
-			"bin/rk35/rk3562_bl31_[^[:space:]]*\.elf"
+			"bin/custom/${SOC}_bl31_custom.elf" "${trust_ini}" \
+			"bin/rk35/${FIRMWARE_SOC}_bl31_[^[:space:]]*\.elf"
 	fi
 	if [ -n "${BL32_BIN}" ]; then
 		install_firmware_override "${BL32_BIN}" \
-			"bin/custom/rk3562_bl32_custom.bin" "${trust_ini}" \
-			"bin/rk35/rk3562_bl32_[^[:space:]]*\.bin"
+			"bin/custom/${SOC}_bl32_custom.bin" "${trust_ini}" \
+			"bin/rk35/${FIRMWARE_SOC}_bl32_[^[:space:]]*\.bin"
 	fi
 }
 
@@ -197,14 +208,14 @@ stage_source() {
 		cp -a -- "${SOURCE_OVERLAY}/." "${build_source}/"
 	fi
 	if [ -n "${EARLY_DTB}" ]; then
-		install -m 0644 "${EARLY_DTB}" "${build_source}/dts/rk3562-charge.dtb"
+		install -m 0644 "${EARLY_DTB}" "${build_source}/dts/${SOC}-charge.dtb"
 	fi
 	printf '%s\n' "${build_source}"
 }
 
 validate_firmware_set() {
-	local loader_ini="${RKBIN}/RKBOOT/RK3562MINIALL.ini"
-	local trust_ini="${RKBIN}/RKTRUST/RK3562TRUST.ini"
+	local loader_ini="${RKBIN}/RKBOOT/${LOADER_SOC}MINIALL.ini"
+	local trust_ini="${RKBIN}/RKTRUST/${TRUST_SOC}TRUST.ini"
 	local relative
 
 	for relative in \
@@ -217,8 +228,8 @@ validate_firmware_set() {
 
 build_images() {
 	local build_source="$1"
-	local loader_ini="${RKBIN}/RKBOOT/RK3562MINIALL.ini"
-	local trust_ini="${RKBIN}/RKTRUST/RK3562TRUST.ini"
+	local loader_ini="${RKBIN}/RKBOOT/${LOADER_SOC}MINIALL.ini"
+	local trust_ini="${RKBIN}/RKTRUST/${TRUST_SOC}TRUST.ini"
 
 	log "Building ${DEFCONFIG} with ${CROSS_COMPILE}gcc"
 	(
@@ -243,12 +254,12 @@ publish_images() {
 	local image_size
 	local ddr_relative
 	local half_size=$((2 * 1024 * 1024))
-	local final_tmp="${WORK_DIR}/rk3562-uboot-16m.bin"
+	local final_tmp="${WORK_DIR}/${SOC}-uboot-16m.bin"
 
 	loader="$(find "${build_source}" -maxdepth 1 -type f \
-		-name 'rk3562*loader*.bin' -print -quit)"
-	[ -n "${loader}" ] || die "RK3562 loader output was not generated"
-	[ -f "${idblock}" ] || die "RK3562 idblock output was not generated"
+		-name "${LOADER_PREFIX}*loader*.bin" -print -quit)"
+	[ -n "${loader}" ] || die "${SOC} loader output was not generated"
+	[ -f "${idblock}" ] || die "${SOC} idblock output was not generated"
 	[ -f "${build_source}/uboot.img" ] || die "uboot.img was not generated"
 
 	idblock_size="$(stat -c '%s' "${idblock}")"
@@ -264,7 +275,7 @@ publish_images() {
 
 	mkdir -p "${OUT_DIR}"
 	install -m 0644 "${idblock}" "${OUT_DIR}/idblock.img"
-	install -m 0644 "${loader}" "${OUT_DIR}/rk3562-download-loader.bin"
+	install -m 0644 "${loader}" "${OUT_DIR}/${SOC}-download-loader.bin"
 	install -m 0644 "${build_source}/uboot.img" "${OUT_DIR}/uboot.img"
 	install -m 0644 "${build_source}/fit/uboot.itb" "${OUT_DIR}/uboot.itb"
 	install -m 0644 "${build_source}/u-boot-nodtb.bin" "${OUT_DIR}/u-boot-nodtb.bin"
@@ -277,10 +288,10 @@ publish_images() {
 	install -m 0644 "${build_source}/.config" "${OUT_DIR}/u-boot.config"
 	install -m 0644 "${build_source}/spl/u-boot-spl.bin" "${OUT_DIR}/u-boot-spl.bin"
 	ddr_relative="$(sed -n 's/^FlashData=//p' \
-		"${RKBIN}/RKBOOT/RK3562MINIALL.ini" | tr -d '\r')"
+		"${RKBIN}/RKBOOT/${LOADER_SOC}MINIALL.ini" | tr -d '\r')"
 	[ -f "${RKBIN}/${ddr_relative}" ] || \
 		die "DDR binary used by the build is missing: ${ddr_relative}"
-	install -m 0644 "${RKBIN}/${ddr_relative}" "${OUT_DIR}/rk3562-ddr.bin"
+	install -m 0644 "${RKBIN}/${ddr_relative}" "${OUT_DIR}/${SOC}-ddr.bin"
 
 	# This is the pre-partition blob written at disk sector 64.  Store redundant
 	# IDB copies 512 KiB apart, as in the reference dump.  The FIT starts at
@@ -292,7 +303,7 @@ publish_images() {
 	dd if="${idblock}" of="${final_tmp}" bs=512 seek=1024 conv=notrunc status=none
 	dd if="${build_source}/uboot.img" of="${final_tmp}" \
 		bs=512 seek=16320 conv=notrunc status=none
-	install -m 0644 "${final_tmp}" "${OUT_DIR}/rk3562-uboot-16m.bin"
+	install -m 0644 "${final_tmp}" "${OUT_DIR}/${SOC}-uboot-16m.bin"
 
 	"${build_source}/tools/dumpimage" -l "${build_source}/uboot.img" \
 		>"${OUT_DIR}/uboot-fit.txt"
@@ -308,16 +319,16 @@ publish_images() {
 		printf 'loader_source=%s\n' "$(basename "${loader}")"
 		sha256sum \
 			"${OUT_DIR}/idblock.img" \
-			"${OUT_DIR}/rk3562-download-loader.bin" \
+			"${OUT_DIR}/${SOC}-download-loader.bin" \
 			"${OUT_DIR}/uboot.img" \
-			"${OUT_DIR}/rk3562-uboot-16m.bin" \
+			"${OUT_DIR}/${SOC}-uboot-16m.bin" \
 			"${OUT_DIR}/u-boot-nodtb.bin" \
 			"${OUT_DIR}/u-boot.dtb" \
 			"${OUT_DIR}/u-boot-spl.bin"
-		sha256sum "${OUT_DIR}/rk3562-ddr.bin"
+		sha256sum "${OUT_DIR}/${SOC}-ddr.bin"
 	} >"${OUT_DIR}/manifest.txt"
 
-	log "Build complete: ${OUT_DIR}/rk3562-uboot-16m.bin"
+	log "Build complete: ${OUT_DIR}/${SOC}-uboot-16m.bin"
 }
 
 main() {

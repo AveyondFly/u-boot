@@ -1,6 +1,7 @@
-# RK3562 device support
+# RK3562 / RK3566 device support
 
-For RK3562 changes, follow `doc/README.rk3562-charge.txt` and these rules:
+For RK356x changes, follow `doc/README.rk3562-charge.txt`,
+`doc/README.rk3566-charge.txt` and these rules:
 
 - Give every model its own profile, defconfig, control DTS and vendor inputs.
   Preserve its own DDR, BL31, BL32, regulators, battery data and charging GPIOs.
@@ -22,11 +23,12 @@ For RK3562 changes, follow `doc/README.rk3562-charge.txt` and these rules:
   `Update U-Boot.sh` and `uboot/` at the archive root. Preserve runtime backups
   and logs when installing an update.
 - Name public firmware archives with the release date and version, never a
-  commit SHA. Use `RK3562_VERSION` or the version in the release tag. When a
+  commit SHA. Use `RK356X_VERSION` or the version in the release tag. When a
   Release is requested, publish the actual GitHub Release with its Ports ZIP;
   an Actions Artifact alone does not complete the request. Verify the published
   download before reporting success.
-- Attach only the combined Ports ZIP to firmware Releases. Keep per-board
+- Publish one combined Ports ZIP per SoC in the same firmware Release:
+  one for RK3562, one for RK3566, each containing all profiles for its SoC. Keep per-board
   archives and separate checksum files in Actions Artifacts; the ZIP includes
   its own checksums and build/validation records.
 - Distinguish build checks from hardware tests. Record the device and tested

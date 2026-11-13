@@ -3,7 +3,9 @@
   "devices": [
     {
       "id": "ngp45h",
-      "models": ["Xifan NGP45H"],
+      "models": [
+        "Xifan NGP45H"
+      ],
       "compatible": "rockchip,rk3562",
       "image": "ngp45h-uboot.bin",
       "sha256": "b0827e9fe708d03c8143f0536e5eb513853824fc2a6279f0c9bb65a3af615f63",
@@ -13,13 +15,27 @@
     },
     {
       "id": "pocket-ais",
-      "models": ["Pocket AIS"],
+      "models": [
+        "Pocket AIS"
+      ],
       "compatible": "rockchip,rk3562",
       "image": "pocket-ais-uboot.bin",
       "sha256": "8a8a01996a1867f4350d9b615bbbdce8fa20b5d0b62ceaae7f3f053bcbfaf95b",
       "size": 16744448,
       "offset": 32768,
       "source_commit": "440a533c028d182e2b572a7d2a847e27da04af9f"
+    },
+    {
+      "id": "powkiddy-x35h",
+      "models": [
+        "Powkiddy x35h"
+      ],
+      "compatible": "rockchip,rk3566",
+      "image": "powkiddy-x35h-uboot.bin",
+      "sha256": "4ad1a812069577a297356598d7455763b5c89e36e60e69f6b071c7831fff6835",
+      "size": 16744448,
+      "offset": 32768,
+      "source_commit": "a40bfbc897b56c518cd9d210ce99fd5ec86d0a54"
     }
   ]
 }

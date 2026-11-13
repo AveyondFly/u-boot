@@ -212,8 +212,11 @@ board-build.json 记录板号、DTB 模式、安装路径、输入 SHA-256、输
 
 6. GitHub Actions 与 Release
 
-.github/workflows/rk3562.yml 自动从 rk3562-profiles/*/board.json 生成设备矩阵，
-目前包含 ngp45h 和 pocket-ais。每台设备独立下载自己的原厂输入、编译、验证并打包。
+2026-11-13 起统一使用 RK356x 工作流：同一 Release 提供 RK3562 和 RK3566
+各一个 Ports ZIP，每个 ZIP 包含该平台全部机型；详见 README.rk3566-charge.txt。
+
+.github/workflows/rk3562.yml 自动从 rk3562-profiles 和 rk3566-profiles 生成设备矩阵，
+RK3562 包含 ngp45h 和 pocket-ais，RK3566 包含 powkiddy-x35h。每台设备独立下载自己的原厂输入、编译、验证并打包。
 默认 embedded 模式；手动运行时也可选 external。使用 Ubuntu 22.04 和
 Linaro GCC 6.3.1-2017.05 aarch64-linux-gnu，不依赖开发机的 /opt 路径。
 
@@ -258,13 +261,13 @@ v2 中两台设备的启动固件均核对自原始 eMMC 快照；v1 的 NGP45H 
 
 触发方式：
   推送 rk3562 分支或向该分支提交 PR：编译所有已注册设备，保存 30 天 Artifact。
-  推送版本标签（如 rk3562-v1.0.0-2026-10-19）：全部设备构建成功后创建正式
-    GitHub Release，并设为最新版本。也支持不带日期的 rk3562-v1.0.0，日期
+  推送版本标签（如 rk356x-v1.1.0-2026-11-13）：全部设备构建成功后创建正式
+    GitHub Release，并设为最新版本。也支持不带日期的 rk356x-v1.1.0，日期
     默认取运行当天的北京时间。
-  Actions -> RK3562 U-Boot -> Run workflow：选择运行分支；boards 填 all，或
+  Actions -> RK356x U-Boot -> Run workflow：选择运行分支；boards 填 all，或
     ngp45h 等逗号分隔板号；可选 DTB 模式。publish 默认关闭，勾选后会发布，
-    version 可填 X.Y.Z；留空则读取 RK3562_VERSION。分支发布使用版本和日期
-    生成标签 rk3562-vX.Y.Z-YYYY-MM-DD，标签发布沿用所推送的版本标签。
+    version 可填 X.Y.Z；留空则读取 RK356X_VERSION。分支发布使用版本和日期
+    生成标签 rk356x-vX.Y.Z-YYYY-MM-DD，标签发布沿用所推送的版本标签。
     正式发布会固定 boards=all、dtb_mode=embedded；单机型/external 选项仅用于
     不发布的调试构建。任一机型失败或缺失，均不发布统一 Ports 包。
 
@@ -275,7 +278,7 @@ push/tag 触发不受此限制。发布作业单独获取 contents:write；构�
 面向用户的统一安装包：
   rk3562-update-uboot-ports-YYYY-MM-DD-vX.Y.Z.zip
 
-正式 Release 只附这一个 Ports ZIP，用户无需选择机型或校验文件。
+正式 Release 每个平台只附一个 Ports ZIP；选择 RK3562 包后无需再选机型或校验文件。
 独立机型构建包和校验文件保留在 Actions Artifacts 中。
 
 ZIP 根目录为 Update U-Boot.sh 和 uboot/；uboot 内含全部机型的组合镜像、
@@ -296,7 +299,7 @@ ZIP 后只发布 ZIP。普通分支构建也会生成 ZIP Artifact，便于先�
 解压目录内的 SHA256SUMS 可用 sha256sum -c SHA256SUMS 检查完整性。
 包含 uboot.img、idblock.img、rk3562-uboot-16m.bin、DTB、实际配置、编译日志、
 board-build.json 等完整产物。package 步骤会复核板号和构建时记录的产物哈希。
-版本由 RK3562_VERSION、手动输入或发布标签确定，日期使用北京时间；日期和
+版本由 RK356X_VERSION、手动输入或发布标签确定，日期使用北京时间；日期和
 版本在 prepare 阶段统一后传给全部作业。SHA 只保留在构建记录内，不用于
 公开资产文件名。同一版本/日期已发布到其他提交时，会要求更新版本号。
 uboot.img 是 U-Boot 分区镜像；rk3562-uboot-16m.bin 是从磁盘 sector 64 起
