@@ -22,7 +22,8 @@ build-rk3566-boards/powkiddy-x35h/embedded/。支持 --input-dir、--output。
 ------------
 
 v1.1.0 在实机更新后无法启动，已从 Release 下架 RK3566 附件。
-仅有构建和镜像自洽校验不足以确认可启动，当前修订镜像仍待实机验证。
+仅有构建和镜像自洽校验不足以确认可启动。v1.1.4 boot-only 已通过 TF1 启动
+实测；带充电探测的镜像仍须单独验证。
 
 启动固件与硬件配置分开记录，不能把同一板的不同系统启动链混为一个基准：
   tf-idb-original.bin：更新前能启动 ROCKNIX 的 TF offset 32768，长度 524288。
@@ -97,8 +98,8 @@ SOC 报告 100% 时关闭两盏软件指示灯。颜色名称来自设备树，�
   PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_rk3566_gpio_clock.py
 
 v1.1.0：TF1 启动实测失败（用户反馈黑屏）；eMMC 冷启动和充电灯未验证。
-TF 固件修订版：本地完整构建/板级校验通过；TF1 启动、无 TF 的 eMMC 冷启动、
-关机充电灯均待实测。黑屏无法单独判断是 DDR、SPL、U-Boot 还是内核阶段。
+v1.1.4 boot-only：用户确认 X35H 的 TF1 启动正常；无 TF 的 eMMC 冷启动、
+带充电探测的普通启动及关机充电灯仍待实测。
 调试时只安装 Ports 文件和运行 --check，不自动刷写、重启设备。
 
 恢复到更新前的 TF 启动区：
@@ -224,3 +225,23 @@ board-boot.json 增加 partition_policy=protective-mbr，记录本次构建策�
   python3 scripts/test_rk3566_partitions.py -v
 该测试已加入 Actions。构建通过后先部署 boot-only 候选包，TF1 启动仍待
 设备测试，无 TF 的 eMMC 冷启动和关机充电仍分别待测。
+
+v1.1.4 启动确认与恢复充电测试
+---------------------------
+
+2026-11-13 用户确认调试设备 X35H 更新 v1.1.4 boot-only 后可正常启动。
+通过 SSH 读到 /proc/cmdline 的 uboot.charge 包含 boot-only:1，确认运行的是
+本工程的充电旁路镜像。该结果确认 TF1 启动通过，不代表 eMMC 冷启动或充电
+已经通过。MBR/GPT 识别修正和本机固件、两阶段控制 DTB 保持原样。
+
+v1.1.5 继续使用默认 embedded 构建，取消诊断构建的 --boot-only 参数：
+  ./build_uboot_rk3566_board.sh --board powkiddy-x35h
+构建必须确认 ROCKCHIP_BOOT_ONLY_TEST 未启用、boot_only_test=false，并保留
+partition_policy=protective-mbr。无需改写原有充电驱动或复制其他机型配置；
+重新启用本机 RK817 电量计/充电探测、关屏充电和红绿 LED 策略，保留阶段日志。
+Ports 包按普通固件规则校验，不使用 --allow-diagnostic。
+
+这一轮依次测试：不接充电器时正常 TF 启动；关机插电进入关屏充电并点灯；
+长按电源键退出充电进入系统；拔掉充电器后的行为。低于 90% 红灯，90..99%
+绿灯，100% 熄灯，每 5 秒刷新。无 TF 的 eMMC 冷启动仍需独立测试。
+仅同步 Ports 文件和执行 --check，用户手动更新，不自动刷写、重启或发布。
