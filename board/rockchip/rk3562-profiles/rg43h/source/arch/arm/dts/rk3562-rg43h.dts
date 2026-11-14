@@ -1,0 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0+
+/dts-v1/;
+#include "rk3562-rg43h-vendor.dtsi"
+#include "rk3562-profile-u-boot.dtsi"
+/* Provisional donor MMC settings; see board.json for source and limitations. */
+#include "rk3562-rg43h-mmc.dtsi"

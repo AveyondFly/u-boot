@@ -1,0 +1,428 @@
+{
+  "schema_version": 1,
+  "id": "xf55h",
+  "description": "Xifan XF55H / own power and battery data / screen-off charging, hardware validation pending",
+  "defconfig": "rk3562_xf55h_defconfig",
+  "dtb_mode": "embedded",
+  "required_kconfig": [
+    "IRQ",
+    "RK8XX_PWRKEY",
+    "PMIC_RK8XX",
+    "POWER_FG_RK817",
+    "LED_GPIO"
+  ],
+  "inputs": {
+    "linux_dtb": "linux-distribution.dtb",
+    "idb": "reference-idb-original.bin",
+    "uboot": "reference-uboot-original.img"
+  },
+  "overlays": [
+    "basic.dtso"
+  ],
+  "firmware": {
+    "source": "Borrowed ngp45h DDR/BL31/BL32 by user request; target compatibility unverified.",
+    "optee": true,
+    "input_sha256": {
+      "idb": "f11ee1ac7a7532ac39770bc9129406d2a5360021663559055146a4ec6864d905",
+      "uboot": "5210cbbb5a590d5774ec4f3fc09fe213f9f27c19669912ca9b013231d4cc56aa"
+    }
+  },
+  "hardware_source": {
+    "repository": "distribution",
+    "revision": "acceeda94ba17709a8be5b595033bbb3fba06b56",
+    "dts": "projects/ROCKNIX/devices/RK356X/linux/dts/rockchip/rk3562-xf55h.dts",
+    "kernel_repository": "kernel_rk356x",
+    "kernel_revision": "34c421e01fde6238c21d1dfc6e7ebe0f3ff0f902"
+  },
+  "validation": {
+    "hardware_tested": false,
+    "tf1_boot": "not-tested",
+    "emmc_only_cold_boot": "not-tested",
+    "charging": "pending-retest: initial basic image disabled charging; restored PMIC detection and screen-off loop",
+    "borrowed_boot_reference": "ngp45h",
+    "boot_observation": "2026-11-14: model and new uboot.charge trace observed in running Linux after user update; TF1 boot and eMMC-only cold boot not separately tested"
+  },
+  "checks": [
+    {
+      "node": "/",
+      "property": "model",
+      "string": "Xifan XF55H"
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20",
+      "property": "compatible",
+      "string": "rockchip,rk817"
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "design_capacity",
+      "cells": [
+        3727
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "design_qmax",
+      "cells": [
+        4100
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "bat_res",
+      "cells": [
+        217
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG1",
+      "property": "regulator-min-microvolt",
+      "cells": [
+        1800000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG1",
+      "property": "regulator-max-microvolt",
+      "cells": [
+        1800000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG2",
+      "property": "regulator-min-microvolt",
+      "cells": [
+        900000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG2",
+      "property": "regulator-max-microvolt",
+      "cells": [
+        900000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG3",
+      "property": "regulator-min-microvolt",
+      "cells": [
+        900000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG3",
+      "property": "regulator-max-microvolt",
+      "cells": [
+        900000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG4",
+      "property": "regulator-min-microvolt",
+      "cells": [
+        3000000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG4",
+      "property": "regulator-max-microvolt",
+      "cells": [
+        3000000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG5",
+      "property": "regulator-min-microvolt",
+      "cells": [
+        1800000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG5",
+      "property": "regulator-max-microvolt",
+      "cells": [
+        3300000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG6",
+      "property": "regulator-min-microvolt",
+      "cells": [
+        3300000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG6",
+      "property": "regulator-max-microvolt",
+      "cells": [
+        3300000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG7",
+      "property": "regulator-min-microvolt",
+      "cells": [
+        1800000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG7",
+      "property": "regulator-max-microvolt",
+      "cells": [
+        1800000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG8",
+      "property": "regulator-min-microvolt",
+      "cells": [
+        1800000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG8",
+      "property": "regulator-max-microvolt",
+      "cells": [
+        1800000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG9",
+      "property": "regulator-min-microvolt",
+      "cells": [
+        2800000
+      ]
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/regulators/LDO_REG9",
+      "property": "regulator-max-microvolt",
+      "cells": [
+        2800000
+      ]
+    },
+    {
+      "node": "/mmc@ff880000",
+      "property": "vmmc-supply",
+      "phandle_target": "/vcc-sd"
+    },
+    {
+      "node": "/mmc@ff880000",
+      "property": "vqmmc-supply",
+      "phandle_target": "/i2c@ff200000/pmic@20/regulators/LDO_REG5"
+    },
+    {
+      "node": "/power-leds/led-red",
+      "property": "gpios",
+      "gpio_controller": "/pinctrl/gpio@ffac0000",
+      "pin": 1,
+      "flags": 0
+    },
+    {
+      "node": "/power-leds/led-green",
+      "property": "gpios",
+      "gpio_controller": "/pinctrl/gpio@ffac0000",
+      "pin": 0,
+      "flags": 0
+    }
+  ],
+  "output_checks": [
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,uboot-charge-on",
+      "cells": [
+        1
+      ]
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,uboot-exit-charge-auto",
+      "cells": [
+        0
+      ]
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,screen-off-at-start",
+      "cells": []
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,charged-led-min-soc",
+      "cells": [
+        90
+      ]
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,charge-leds-off-at-full",
+      "cells": []
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,system-suspend",
+      "cells": [
+        0
+      ]
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,auto-wakeup-interval",
+      "cells": [
+        5
+      ]
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,charging-led",
+      "phandle_target": "/power-leds/led-red"
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,charged-led",
+      "phandle_target": "/power-leds/led-green"
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "rockchip,charger-detect-source",
+      "string": "pmic"
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "rockchip,usb-input-init",
+      "cells": []
+    },
+    {
+      "node": "/i2c@ff200000/pmic@20/battery",
+      "property": "rockchip,charger-detect-timeout-ms",
+      "cells": [
+        3000
+      ]
+    },
+    {
+      "node": "/power-leds/led-red",
+      "property": "gpios",
+      "gpio_controller": "/pinctrl/gpio@ffac0000",
+      "pin": 1,
+      "flags": 0
+    },
+    {
+      "node": "/power-leds/led-green",
+      "property": "gpios",
+      "gpio_controller": "/pinctrl/gpio@ffac0000",
+      "pin": 0,
+      "flags": 0
+    },
+    {
+      "node": "/charge-animation",
+      "property": "status",
+      "string": "okay"
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,android-charge-on",
+      "cells": [
+        0
+      ]
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,uboot-exit-charge-level",
+      "cells": [
+        1
+      ]
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,uboot-exit-charge-voltage",
+      "cells": [
+        3350
+      ]
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,auto-wakeup-screen-invert",
+      "cells": [
+        0
+      ]
+    }
+  ],
+  "control_dtb": {
+    "name": "rk3562-xf55h",
+    "power_init": "board-dtb",
+    "checks": [
+      {
+        "node": "/",
+        "property": "model",
+        "string": "Xifan XF55H"
+      },
+      {
+        "node": "/chosen",
+        "property": "stdout-path",
+        "string": "/serial@ff210000"
+      },
+      {
+        "node": "/mmc@ff870000",
+        "property": "max-frequency",
+        "cells": [
+          200000000
+        ]
+      },
+      {
+        "node": "/mmc@ff870000",
+        "property": "bus-width",
+        "cells": [
+          8
+        ]
+      },
+      {
+        "node": "/mmc@ff880000",
+        "property": "vmmc-supply",
+        "absent": true
+      },
+      {
+        "node": "/mmc@ff880000",
+        "property": "vqmmc-supply",
+        "absent": true
+      },
+      {
+        "node": "/mmc@ff880000",
+        "property": "max-frequency",
+        "cells": [
+          150000000
+        ]
+      }
+    ],
+    "mmc_reference": "vendor-boot",
+    "stage_checks": {
+      "u-boot.dtb": [
+        {
+          "node": "/mmc@ff870000",
+          "property": "mmc-hs400-1_8v",
+          "absent": true
+        },
+        {
+          "node": "/mmc@ff870000",
+          "property": "mmc-hs400-enhanced-strobe",
+          "absent": true
+        }
+      ],
+      "u-boot-spl.dtb": [
+        {
+          "node": "/mmc@ff870000",
+          "property": "mmc-hs400-1_8v",
+          "cells": []
+        },
+        {
+          "node": "/mmc@ff870000",
+          "property": "mmc-hs400-enhanced-strobe",
+          "cells": []
+        }
+      ]
+    },
+    "mmc_reference_sha256": {
+      "spl": "8eca9d8aad5fdb382f910873fc0e377506267f961312ef7e66f46f3ab23320a4",
+      "uboot": "206ab8eebb5b180a3e41fa015acdc6fbfa4e7583e0c0a1a0919912af03732605"
+    },
+    "source": "Borrowed ngp45h SPL/U-Boot MMC settings by user request; target boot chain unavailable; hardware untested."
+  }
+}

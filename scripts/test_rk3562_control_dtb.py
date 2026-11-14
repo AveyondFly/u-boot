@@ -100,6 +100,13 @@ class ControlDTBTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "board power configuration changed"):
             verify_power_configuration(self.base, output)
 
+    def test_supply_checks_resolve_the_device_regulator(self):
+        boards.check_properties(self.base, [dict(node="/mmc", property="vmmc-supply",
+                                                phandle_target="/sd-regulator")])
+        with self.assertRaisesRegex(ValueError, "board DTB mismatch"):
+            boards.check_properties(self.base, [dict(node="/mmc", property="vmmc-supply",
+                                                    phandle_target="/source-regulator")])
+
     def test_model_export_requires_resolvable_symbols(self):
         subprocess.run(["fdtput", "-r", str(self.base), "/__symbols__"], check=True)
         with self.assertRaisesRegex(ValueError, "needs __symbols__"):
@@ -107,7 +114,9 @@ class ControlDTBTests(unittest.TestCase):
 
     def test_registered_boards_select_distinct_defconfigs_and_trees(self):
         configs, trees = set(), set()
-        for board in ("ngp45h", "pocket-ais"):
+        profiles = sorted(boards.PROFILES.glob("*/board.json"))
+        for profile_path in profiles:
+            board = profile_path.parent.name
             profile = boards.load_profile(boards.PROFILES / board / "board.json")
             config = self.root / (board + "_defconfig")
             boards.render_config(profile, "embedded", config)
@@ -119,8 +128,8 @@ class ControlDTBTests(unittest.TestCase):
             profile["kconfig"] = {"DEFAULT_DEVICE_TREE": "rk3562-evb"}
             with self.assertRaisesRegex(ValueError, "must select its own"):
                 boards.render_config(profile, "embedded", config)
-        self.assertEqual(len(configs), 2)
-        self.assertEqual(len(trees), 2)
+        self.assertEqual(len(configs), len(profiles))
+        self.assertEqual(len(trees), len(profiles))
 
 
 class BootMMCTests(unittest.TestCase):

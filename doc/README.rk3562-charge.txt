@@ -1,6 +1,11 @@
 RK3562 板级构建与关机充电
 ========================
 
+新增 RG43H Pro、RG43V Pro、RG52 Mini、XF55H 的基础启动配置见
+README.rk3562-basic.txt。这四台暂用用户指定的借用固件/MMC 参考，
+四台均已同步无屏关机充电策略，仍需各设备单独实测。
+不能沿用下文现有两台的充电实测结论。
+
 1. 三种 DTB 的关系
 
 u-boot.dtb 是各机型独立生成的早期控制 DTB，已作为 FIT 的 fdt 节点打包在
@@ -216,7 +221,7 @@ board-build.json 记录板号、DTB 模式、安装路径、输入 SHA-256、输
 各一个 Ports ZIP，每个 ZIP 包含该平台全部机型；详见 README.rk3566-charge.txt。
 
 .github/workflows/rk3562.yml 自动从 rk3562-profiles 和 rk3566-profiles 生成设备矩阵，
-RK3562 包含 ngp45h 和 pocket-ais，RK3566 包含 powkiddy-x35h、powkiddy-x35s、
+RK3562 包含 ngp45h、pocket-ais、rg43h、rg43v、rg52mini、xf55h，RK3566 包含 powkiddy-x35h、powkiddy-x35s、
 powkiddy-x55。每台设备独立下载输入、编译、验证并打包。
 X35S/X55 的共用硬件输入依据及独立电池参数见 README.rk3566-charge.txt。
 默认 embedded 模式；手动运行时也可选 external。使用 Ubuntu 22.04 和

@@ -15,6 +15,7 @@ from unittest.mock import patch
 import build_rk3562_board as boards
 from capture_rk3562_board import capture_file
 from extract_rk3562_fit_firmware import extract as extract_fit
+from rk3562_control_dtb import read_tree, verify_power_configuration
 
 
 class BoardTests(unittest.TestCase):
@@ -92,6 +93,74 @@ class BoardTests(unittest.TestCase):
     def test_decompiled_dts_input(self):
         self.profile["inputs"] = {"linux_dts": "base.dts"}
         self.build(self.root / "out")
+
+    def test_new_boards_keep_screen_off_charging_and_their_own_batteries(self):
+        for board, capacity, qmax, resistance, voltage, current in (
+                ("rg43h", 2906, 3197, 102, 4280, 1500),
+                ("rg43v", 2906, 3197, 102, 4280, 1500),
+                ("rg52mini", 4654, 5119, 78, 4300, 2000),
+                ("xf55h", 3727, 4100, 217, 4350, 2000)):
+            with self.subTest(board=board):
+                self.check_screen_off_charging(board, capacity, qmax, resistance, voltage, current)
+
+    def check_screen_off_charging(self, board, capacity, qmax, resistance, voltage, current):
+        profile_path = boards.PROFILES / board / "board.json"
+        profile = boards.load_profile(profile_path)
+        source = self.data / (board + ".dts")
+        source.write_text('''/dts-v1/;
+/ {
+    pinctrl {
+        gpio3: gpio@ffac0000 { gpio-controller; #gpio-cells = <2>; };
+        pcfg_pull_none: pull-none { bias-disable; };
+    };
+    power-leds {
+        compatible = "gpio-leds";
+        led-red { gpios = <&gpio3 1 0>; };
+        led-green { gpios = <&gpio3 0 0>; };
+    };
+    charge-animation { compatible = "rockchip,uboot-charge";
+        rockchip,uboot-charge-on = <0>; };
+    own-rail { regulator-name = "own-rail";
+        regulator-min-microvolt = <2700000>;
+        regulator-max-microvolt = <2700000>; };
+    i2c@ff200000 { pmic@20 { compatible = "rockchip,rk817";
+        battery { design_capacity = <3727>; design_qmax = <4100>;
+            bat_res = <217>; ocv_table = <3400 3571 4174>; };
+        charger { max_chrg_voltage = <4350>; max_chrg_current = <2000>; };
+    }; };
+};'''.replace("<3727>", f"<{capacity}>").replace("<4100>", f"<{qmax}>")
+            .replace("<217>", f"<{resistance}>").replace("<4350>", f"<{voltage}>")
+            .replace("<2000>", f"<{current}>"))
+        base, overlay, output = [self.root / n for n in ("xf.dtb", "xf.dtbo", "xf-out.dtb")]
+        for src, dst in ((source, base), (profile_path.parent / profile["overlays"][0], overlay)):
+            subprocess.run(["dtc", "-@", "-I", "dts", "-O", "dtb", "-o", str(dst), str(src)],
+                           check=True, stderr=subprocess.DEVNULL)
+        subprocess.run(["fdtoverlay", "-i", str(base), "-o", str(output), str(overlay)], check=True)
+        boards.check_properties(output, profile["output_checks"])
+        tree = read_tree(output)
+        self.assertEqual(tree["/charge-animation"]["rockchip,uboot-charge-on"], b"\0\0\0\1")
+        self.assertEqual(tree["/charge-animation"]["rockchip,uboot-exit-charge-auto"], bytes(4))
+        self.assertIn("rockchip,screen-off-at-start", tree["/charge-animation"])
+        for node in ("/i2c@ff200000/pmic@20/battery", "/i2c@ff200000/pmic@20/charger"):
+            for key, value in read_tree(base)[node].items():
+                self.assertEqual(tree[node][key], value)
+        verify_power_configuration(base, output)
+        # The screen-off charge policy must stay aligned with NGP45H while
+        # each model keeps its own battery data and GPIO3_A0/A1 LED wiring.
+        ngp_overlay, ngp_output = self.root / "ngp.dtbo", self.root / "ngp-out.dtb"
+        subprocess.run(["dtc", "-@", "-I", "dts", "-O", "dtb", "-o", str(ngp_overlay),
+                        str(boards.PROFILES / "ngp45h/charge.dtso")],
+                       check=True, stderr=subprocess.DEVNULL)
+        subprocess.run(["fdtoverlay", "-i", str(base), "-o", str(ngp_output),
+                        str(ngp_overlay)], check=True)
+
+        def policy(props):
+            return {k: v for k, v in props.items()
+                    if k not in ("rockchip,charging-led", "rockchip,charged-led")}
+
+        self.assertEqual(policy(tree["/charge-animation"]),
+                         policy(read_tree(ngp_output)["/charge-animation"]))
+        self.assertIn("LED_GPIO", profile["required_kconfig"])
 
     def test_pocket_ais_uses_its_red_green_wiring_and_battery_data(self):
         profile_path = boards.PROFILES / "pocket-ais/board.json"

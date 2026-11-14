@@ -261,7 +261,7 @@ jobs:
           Charging DTB mode: $DTB_MODE.
 
           Download the Ports ZIP for your platform:
-          - RK3562 (NGP45H, Pocket AIS): rk3562-update-uboot-ports-$RELEASE_DATE-v$RELEASE_VERSION.zip
+          - RK3562 (NGP45H, Pocket AIS, RG43H Pro, RG43V Pro, RG52 Mini, XF55H): rk3562-update-uboot-ports-$RELEASE_DATE-v$RELEASE_VERSION.zip
           - RK3566 (Powkiddy X35H, X35S, X55): rk3566-update-uboot-ports-$RELEASE_DATE-v$RELEASE_VERSION.zip
 
           Extract directly into /roms/ports/ and run Update U-Boot.
@@ -269,6 +269,9 @@ jobs:
           and verifies the written image. Each platform ZIP contains all its boards.
           Per-board archives and separate checksum files remain in Actions Artifacts.
           Build checks do not establish hardware boot or charging validation.
+          The four new RK3562 profiles retain their own power/battery data and
+          use provisional DDR/trusted-firmware and early MMC references borrowed
+          from NGP45H or Pocket AIS as requested; individual hardware tests remain pending.
           Source revision: $SOURCE_SHA.
           EOF
           if gh release view "$tag" >/dev/null 2>&1; then

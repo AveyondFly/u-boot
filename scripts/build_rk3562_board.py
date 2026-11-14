@@ -92,6 +92,8 @@ def check_properties(dtb, checks):
             if "gpio_controller" in check:
                 expected = [integer(dtb, check["gpio_controller"], "phandle"),
                             check["pin"], check.get("flags", 0)]
+            elif "phandle_target" in check:
+                expected = [integer(dtb, check["phandle_target"], "phandle")]
             else:
                 expected = check["cells"]
         if actual != expected:

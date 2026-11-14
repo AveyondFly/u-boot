@@ -60,6 +60,54 @@
       "size": 16744448,
       "offset": 32768,
       "source_commit": "536f76c2f96461558e931ebb2a036021e635e22c"
+    },
+    {
+      "id": "rg43h",
+      "models": [
+        "AISLPC RG43H Pro"
+      ],
+      "compatible": "rockchip,rk3562",
+      "image": "rg43h-uboot.bin",
+      "sha256": "864e91a02b0767a982c27a24f076db489b07f3229b33b8b05530b1434b64f7af",
+      "size": 16744448,
+      "offset": 32768,
+      "source_commit": "0e602afe0dea92792c4564ee1f1b179a9e73fa11"
+    },
+    {
+      "id": "rg43v",
+      "models": [
+        "AISLPC RG43V Pro"
+      ],
+      "compatible": "rockchip,rk3562",
+      "image": "rg43v-uboot.bin",
+      "sha256": "2072a61b4bdb4c8afd76e3b9bd64c7e9609beb6f0abe84527092c43943281886",
+      "size": 16744448,
+      "offset": 32768,
+      "source_commit": "0e602afe0dea92792c4564ee1f1b179a9e73fa11"
+    },
+    {
+      "id": "rg52mini",
+      "models": [
+        "AISLPC RG52 Mini"
+      ],
+      "compatible": "rockchip,rk3562",
+      "image": "rg52mini-uboot.bin",
+      "sha256": "9e313c69918b66d1fc219ab6279b84aefeef4f6b2600d58823a0b7423e515365",
+      "size": 16744448,
+      "offset": 32768,
+      "source_commit": "0e602afe0dea92792c4564ee1f1b179a9e73fa11"
+    },
+    {
+      "id": "xf55h",
+      "models": [
+        "Xifan XF55H"
+      ],
+      "compatible": "rockchip,rk3562",
+      "image": "xf55h-uboot.bin",
+      "sha256": "b05718a3fe59633b4eef0cb7d317ef463eb43fe80ba0e23011aa127ec0dcdb9c",
+      "size": 16744448,
+      "offset": 32768,
+      "source_commit": "0e602afe0dea92792c4564ee1f1b179a9e73fa11"
     }
   ]
 }
