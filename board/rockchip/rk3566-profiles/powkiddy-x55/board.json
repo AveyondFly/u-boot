@@ -1,0 +1,217 @@
+{
+  "schema_version": 1,
+  "soc": "rk3566",
+  "id": "powkiddy-x55",
+  "description": "Powkiddy X55 / RK817 / red and green charging LEDs",
+  "defconfig": "rk3566_powkiddy_x55_defconfig",
+  "dtb_mode": "embedded",
+  "dtb_path": "/rk3566-charge.dtb",
+  "required_kconfig": [
+    "IRQ",
+    "RK8XX_PWRKEY",
+    "PMIC_RK8XX",
+    "POWER_FG_RK817",
+    "LED_GPIO",
+    "IO_DOMAIN",
+    "RK3566_HANDHELD_BOOT",
+    "ROCKCHIP_BOOT_TRACE",
+    "CONSOLE_RECORD"
+  ],
+  "inputs": {
+    "linux_dtb": "linux-vendor.dtb",
+    "idb": "tf-idb-original.bin",
+    "uboot": "tf-uboot-original.img"
+  },
+  "overlays": [
+    "charge.dtso"
+  ],
+  "checks": [
+    {
+      "node": "/i2c@fdd40000/pmic@20/charger",
+      "property": "charge_red_gpio",
+      "gpio_controller": "/pinctrl/gpio@fe770000",
+      "pin": 12,
+      "flags": 0
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/charger",
+      "property": "charge_green_gpio",
+      "gpio_controller": "/pinctrl/gpio@fe770000",
+      "pin": 13,
+      "flags": 0
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/charger",
+      "property": "charge_yellow_gpio",
+      "gpio_controller": "/pinctrl/gpio@fe770000",
+      "pin": 14,
+      "flags": 0
+    }
+  ],
+  "output_checks": [
+    {
+      "node": "/",
+      "property": "model",
+      "string": "Powkiddy x55"
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,uboot-exit-charge-auto",
+      "cells": [
+        0
+      ]
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,charged-led-min-soc",
+      "cells": [
+        90
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/battery",
+      "property": "design_capacity",
+      "cells": [
+        4000
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/battery",
+      "property": "design_qmax",
+      "cells": [
+        4400
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/battery",
+      "property": "bat_res",
+      "cells": [
+        91
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/battery",
+      "property": "sleep_enter_current",
+      "cells": [
+        300
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/battery",
+      "property": "sleep_exit_current",
+      "cells": [
+        300
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/battery",
+      "property": "sleep_filter_current",
+      "cells": [
+        100
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/battery",
+      "property": "power_off_thresd",
+      "cells": [
+        3400
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/battery",
+      "property": "ocv_table",
+      "cells": [
+        3400,
+        3553,
+        3621,
+        3688,
+        3735,
+        3768,
+        3801,
+        3826,
+        3843,
+        3857,
+        3878,
+        3904,
+        3934,
+        3972,
+        4006,
+        4020,
+        4030,
+        4044,
+        4059,
+        4083,
+        4138
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/charger",
+      "property": "max_input_current",
+      "cells": [
+        1500
+      ]
+    }
+  ],
+  "control_dtb": {
+    "name": "rk3566-powkiddy-x55",
+    "power_init": "board-dtb",
+    "mmc_reference": "vendor-boot",
+    "mmc_reference_sha256": {
+      "spl": "9679fe2a45776f35494f95ccbf57831f94c54cc90b3766a2f7371e169ac928fb",
+      "uboot": "9679fe2a45776f35494f95ccbf57831f94c54cc90b3766a2f7371e169ac928fb"
+    },
+    "checks": [
+      {
+        "node": "/",
+        "property": "model",
+        "string": "Powkiddy x55"
+      },
+      {
+        "node": "/chosen",
+        "property": "stdout-path",
+        "string": "/serial@fe660000"
+      },
+      {
+        "node": "/sdhci@fe310000",
+        "property": "bus-width",
+        "cells": [
+          8
+        ]
+      },
+      {
+        "node": "/sdhci@fe310000",
+        "property": "max-frequency",
+        "cells": [
+          200000000
+        ]
+      },
+      {
+        "node": "/dwmmc@fe2b0000",
+        "property": "max-frequency",
+        "cells": [
+          150000000
+        ]
+      }
+    ],
+    "inputs": {
+      "idb": "idb-original.bin",
+      "uboot": "uboot-original.img"
+    },
+    "source": "X35H eMMC IDB/SPL and U-Boot control trees; user confirmed identical non-battery hardware (2026-11-14)"
+  },
+  "firmware": {
+    "source": "X35H working ROCKNIX TF snapshot; user confirmed shared boot hardware on X35H/X35S/X55 (2026-11-14); not a capture from this model",
+    "optee": false,
+    "input_sha256": {
+      "idb": "f7ba1b1d132be0310e19f4a34d30e2cd973599bc5bafb80a4c892194bd26f181",
+      "uboot": "08e1367fabe1c160cabf23372a6acfe771360ad563e90c69fd1949474ae12f2b"
+    }
+  },
+  "boot_policy": "linux-distro",
+  "battery_source": {
+    "repository": "distribution",
+    "revision": "acceeda94ba17709a8be5b595033bbb3fba06b56",
+    "path": "projects/ROCKNIX/devices/RK356X/linux/dts/rockchip/rk3566-powkiddy-x55.dts",
+    "sha256": "16aad980584e8c35ae23ade3949f0d87c3b74106f2bcd7955285c4ec7a99aa4b"
+  }
+}

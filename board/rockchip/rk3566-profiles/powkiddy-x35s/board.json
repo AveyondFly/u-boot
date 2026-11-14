@@ -1,0 +1,217 @@
+{
+  "schema_version": 1,
+  "soc": "rk3566",
+  "id": "powkiddy-x35s",
+  "description": "Powkiddy X35S / RK817 / red and green charging LEDs",
+  "defconfig": "rk3566_powkiddy_x35s_defconfig",
+  "dtb_mode": "embedded",
+  "dtb_path": "/rk3566-charge.dtb",
+  "required_kconfig": [
+    "IRQ",
+    "RK8XX_PWRKEY",
+    "PMIC_RK8XX",
+    "POWER_FG_RK817",
+    "LED_GPIO",
+    "IO_DOMAIN",
+    "RK3566_HANDHELD_BOOT",
+    "ROCKCHIP_BOOT_TRACE",
+    "CONSOLE_RECORD"
+  ],
+  "inputs": {
+    "linux_dtb": "linux-vendor.dtb",
+    "idb": "tf-idb-original.bin",
+    "uboot": "tf-uboot-original.img"
+  },
+  "overlays": [
+    "charge.dtso"
+  ],
+  "checks": [
+    {
+      "node": "/i2c@fdd40000/pmic@20/charger",
+      "property": "charge_red_gpio",
+      "gpio_controller": "/pinctrl/gpio@fe770000",
+      "pin": 12,
+      "flags": 0
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/charger",
+      "property": "charge_green_gpio",
+      "gpio_controller": "/pinctrl/gpio@fe770000",
+      "pin": 13,
+      "flags": 0
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/charger",
+      "property": "charge_yellow_gpio",
+      "gpio_controller": "/pinctrl/gpio@fe770000",
+      "pin": 14,
+      "flags": 0
+    }
+  ],
+  "output_checks": [
+    {
+      "node": "/",
+      "property": "model",
+      "string": "Powkiddy x35s"
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,uboot-exit-charge-auto",
+      "cells": [
+        0
+      ]
+    },
+    {
+      "node": "/charge-animation",
+      "property": "rockchip,charged-led-min-soc",
+      "cells": [
+        90
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/battery",
+      "property": "design_capacity",
+      "cells": [
+        2718
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/battery",
+      "property": "design_qmax",
+      "cells": [
+        2990
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/battery",
+      "property": "bat_res",
+      "cells": [
+        94
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/battery",
+      "property": "sleep_enter_current",
+      "cells": [
+        150
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/battery",
+      "property": "sleep_exit_current",
+      "cells": [
+        180
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/battery",
+      "property": "sleep_filter_current",
+      "cells": [
+        100
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/battery",
+      "property": "power_off_thresd",
+      "cells": [
+        3500
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/battery",
+      "property": "ocv_table",
+      "cells": [
+        3500,
+        3532,
+        3560,
+        3586,
+        3605,
+        3619,
+        3632,
+        3645,
+        3661,
+        3683,
+        3716,
+        3760,
+        3802,
+        3846,
+        3892,
+        3938,
+        3985,
+        4033,
+        4081,
+        4129,
+        4183
+      ]
+    },
+    {
+      "node": "/i2c@fdd40000/pmic@20/charger",
+      "property": "max_input_current",
+      "cells": [
+        2000
+      ]
+    }
+  ],
+  "control_dtb": {
+    "name": "rk3566-powkiddy-x35s",
+    "power_init": "board-dtb",
+    "mmc_reference": "vendor-boot",
+    "mmc_reference_sha256": {
+      "spl": "9679fe2a45776f35494f95ccbf57831f94c54cc90b3766a2f7371e169ac928fb",
+      "uboot": "9679fe2a45776f35494f95ccbf57831f94c54cc90b3766a2f7371e169ac928fb"
+    },
+    "checks": [
+      {
+        "node": "/",
+        "property": "model",
+        "string": "Powkiddy x35s"
+      },
+      {
+        "node": "/chosen",
+        "property": "stdout-path",
+        "string": "/serial@fe660000"
+      },
+      {
+        "node": "/sdhci@fe310000",
+        "property": "bus-width",
+        "cells": [
+          8
+        ]
+      },
+      {
+        "node": "/sdhci@fe310000",
+        "property": "max-frequency",
+        "cells": [
+          200000000
+        ]
+      },
+      {
+        "node": "/dwmmc@fe2b0000",
+        "property": "max-frequency",
+        "cells": [
+          150000000
+        ]
+      }
+    ],
+    "inputs": {
+      "idb": "idb-original.bin",
+      "uboot": "uboot-original.img"
+    },
+    "source": "X35H eMMC IDB/SPL and U-Boot control trees; user confirmed identical non-battery hardware (2026-11-14)"
+  },
+  "firmware": {
+    "source": "X35H working ROCKNIX TF snapshot; user confirmed shared boot hardware on X35H/X35S/X55 (2026-11-14); not a capture from this model",
+    "optee": false,
+    "input_sha256": {
+      "idb": "f7ba1b1d132be0310e19f4a34d30e2cd973599bc5bafb80a4c892194bd26f181",
+      "uboot": "08e1367fabe1c160cabf23372a6acfe771360ad563e90c69fd1949474ae12f2b"
+    }
+  },
+  "boot_policy": "linux-distro",
+  "battery_source": {
+    "repository": "distribution",
+    "revision": "acceeda94ba17709a8be5b595033bbb3fba06b56",
+    "path": "projects/ROCKNIX/devices/RK356X/linux/dts/rockchip/rk3566-powkiddy-x35s.dts",
+    "sha256": "aebd4999d691b2035e6ffd8db8ac043abeeb4663bb1a7ecd941e43dfda8990ad"
+  }
+}

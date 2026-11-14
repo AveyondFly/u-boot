@@ -46,7 +46,8 @@ class RK3566Tests(unittest.TestCase):
 
     def test_matrix_keeps_soc_with_each_board(self):
         rows = ci.matrix('all', 'all')['include']
-        self.assertIn(dict(board='powkiddy-x35h', soc='rk3566'), rows)
+        for model in ('x35h', 'x35s', 'x55'):
+            self.assertIn(dict(board='powkiddy-' + model, soc='rk3566'), rows)
         self.assertIn(dict(board='ngp45h', soc='rk3562'), rows)
         with self.assertRaises(FileNotFoundError):
             ci.profile_for('ngp45h', 'rk3566')
@@ -74,6 +75,63 @@ class RK3566Tests(unittest.TestCase):
         self.assertIn('# CONFIG_ROCKCHIP_BOOT_ONLY_TEST is not set\n', config)
         boards.render_config(profile, 'embedded', out, boot_only=True)
         self.assertIn('CONFIG_ROCKCHIP_BOOT_ONLY_TEST=y\n', out.read_text())
+
+    def test_battery_variants_keep_their_own_configs_and_overlay_values(self):
+        source = self.root / 'base.dts'
+        source.write_text('''/dts-v1/;
+/ {
+    compatible = "rockchip,rk3566";
+    pinctrl {
+        pcfg_pull_none: pull-none {};
+        gpio4: gpio@fe770000 { gpio-controller; #gpio-cells = <2>; };
+    };
+    charge-animation {};
+    i2c@fdd40000 { pmic@20 {
+        compatible = "rockchip,rk817";
+        battery {};
+        charger {
+            charge_red_gpio = <&gpio4 12 0>;
+            charge_green_gpio = <&gpio4 13 0>;
+            charge_yellow_gpio = <&gpio4 14 0>;
+        };
+    }; };
+};
+''')
+        base = self.root / 'base.dtb'
+        subprocess.run(['dtc', '-@', '-I', 'dts', '-O', 'dtb', '-o', str(base), str(source)],
+                       check=True, stderr=subprocess.DEVNULL)
+        for model, capacity, qmax, resistance, current, threshold, sleep in (
+                ('x35s', 2718, 2990, 94, 2000, 3500, 150),
+                ('x55', 4000, 4400, 91, 1500, 3400, 300)):
+            with self.subTest(model=model):
+                profile = ci.profile_for('powkiddy-' + model, 'rk3566')
+                data, stage = self.root / (model + '-data'), self.root / model
+                data.mkdir()
+                stage.mkdir()
+                shutil.copy2(base, data / profile['inputs']['linux_dtb'])
+                dtb, _, _ = boards.prepare_dtb(
+                    profile, ci.PROFILES.with_name('rk3566-profiles') / profile['id'], data, stage)
+                battery = '/i2c@fdd40000/pmic@20/battery'
+                checks = {'design_capacity': capacity, 'design_qmax': qmax,
+                          'bat_res': resistance, 'power_off_thresd': threshold,
+                          'sleep_enter_current': sleep,
+                          'sleep_exit_current': 180 if model == 'x35s' else 300}
+                for key, value in checks.items():
+                    self.assertEqual(boards.integer(dtb, battery, key), value)
+                ocv = [int(v, 16) for v in boards.prop(dtb, battery, 'ocv_table').split()]
+                expected_ocv = ([3500, 3532, 3560, 3586, 3605, 3619, 3632, 3645,
+                                 3661, 3683, 3716, 3760, 3802, 3846, 3892, 3938,
+                                 3985, 4033, 4081, 4129, 4183] if model == 'x35s' else
+                                [3400, 3553, 3621, 3688, 3735, 3768, 3801, 3826,
+                                 3843, 3857, 3878, 3904, 3934, 3972, 4006, 4020,
+                                 4030, 4044, 4059, 4083, 4138])
+                self.assertEqual(ocv, expected_ocv)
+                self.assertEqual(boards.integer(dtb, '/i2c@fdd40000/pmic@20/charger',
+                                                'max_input_current'), current)
+                config = stage / 'defconfig'
+                boards.render_config(profile, 'embedded', config)
+                self.assertIn('CONFIG_DEFAULT_DEVICE_TREE="rk3566-powkiddy-' + model + '"',
+                              config.read_text())
 
     def test_rk3566_mmc_paths_and_tf_priority_are_verified(self):
         self.uboot, self.spl = self.fixture('uboot'), self.fixture('spl')
@@ -153,11 +211,21 @@ class RK3566Tests(unittest.TestCase):
                         tracked_source_diff_sha256=hashlib.sha256(b'').hexdigest(),
                         artifacts={p.name: package.sha256(p) for p in build.iterdir()})
         (build / 'board-build.json').write_text(json.dumps(metadata))
+        builds = [build]
+        for model in ('x35s', 'x55'):
+            variant = self.root / model
+            shutil.copytree(build, variant)
+            (variant / 'board-build.json').write_text(json.dumps(
+                dict(metadata, board_id='powkiddy-' + model)))
+            builds.append(variant)
         def screens(output, font):
             output.mkdir()
         output = self.root / 'ports'
         with patch.object(package, 'screens', side_effect=screens):
-            package.build_ports([build], output, self.root, require_all=True,
+            with self.assertRaisesRegex(ValueError, 'all board profiles'):
+                package.build_ports([build], self.root / 'incomplete', self.root, require_all=True,
+                                    version='1.1.0', soc='rk3566')
+            package.build_ports(builds, output, self.root, require_all=True,
                                 version='1.1.0', release_date='2026-11-13', soc='rk3566')
             with self.assertRaisesRegex(ValueError, 'different SoC'):
                 package.build_ports([build], self.root / 'wrong', self.root)
@@ -165,7 +233,8 @@ class RK3566Tests(unittest.TestCase):
         self.assertEqual(archive.name, 'rk3566-update-uboot-ports-2026-11-13-v1.1.0.zip')
         with zipfile.ZipFile(archive) as bundle:
             manifest = json.loads(bundle.read('uboot/devices.json'))
-            self.assertEqual([d['id'] for d in manifest['devices']], ['powkiddy-x35h'])
+            self.assertEqual([d['id'] for d in manifest['devices']],
+                             ['powkiddy-x35h', 'powkiddy-x35s', 'powkiddy-x55'])
             self.assertNotIn('uboot/ngp45h-uboot.bin', bundle.namelist())
 
 

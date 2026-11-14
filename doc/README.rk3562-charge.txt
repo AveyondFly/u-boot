@@ -216,7 +216,9 @@ board-build.json 记录板号、DTB 模式、安装路径、输入 SHA-256、输
 各一个 Ports ZIP，每个 ZIP 包含该平台全部机型；详见 README.rk3566-charge.txt。
 
 .github/workflows/rk3562.yml 自动从 rk3562-profiles 和 rk3566-profiles 生成设备矩阵，
-RK3562 包含 ngp45h 和 pocket-ais，RK3566 包含 powkiddy-x35h。每台设备独立下载自己的原厂输入、编译、验证并打包。
+RK3562 包含 ngp45h 和 pocket-ais，RK3566 包含 powkiddy-x35h、powkiddy-x35s、
+powkiddy-x55。每台设备独立下载输入、编译、验证并打包。
+X35S/X55 的共用硬件输入依据及独立电池参数见 README.rk3566-charge.txt。
 默认 embedded 模式；手动运行时也可选 external。使用 Ubuntu 22.04 和
 Linaro GCC 6.3.1-2017.05 aarch64-linux-gnu，不依赖开发机的 /opt 路径。
 

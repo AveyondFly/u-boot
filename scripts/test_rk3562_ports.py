@@ -40,6 +40,16 @@ class PortsTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ports.choose_device(config, "Xifan NGP45H", ["rockchip,rk3562"])
 
+    def test_powkiddy_models_select_separate_battery_images(self):
+        for model in ('x35h', 'x35s', 'x55'):
+            device = ports.choose_device(self.config, 'Powkiddy ' + model,
+                                         ['powkiddy,' + model, 'rockchip,rk3566'])
+            self.assertEqual(device['id'], 'powkiddy-' + model)
+            self.assertEqual(device['image'], 'powkiddy-' + model + '-uboot.bin')
+        for model in ('Powkiddy x35', 'Powkiddy X55', 'Powkiddy x55 rev2'):
+            with self.assertRaises(ValueError):
+                ports.choose_device(self.config, model, ['rockchip,rk3566'])
+
     def test_target_follows_flash_mount_and_earliest_partition(self):
         sys_block = self.root / "sys"
         disk = sys_block / "mmcblk7"

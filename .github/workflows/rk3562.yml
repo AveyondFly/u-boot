@@ -262,7 +262,7 @@ jobs:
 
           Download the Ports ZIP for your platform:
           - RK3562 (NGP45H, Pocket AIS): rk3562-update-uboot-ports-$RELEASE_DATE-v$RELEASE_VERSION.zip
-          - RK3566 (Powkiddy X35H): rk3566-update-uboot-ports-$RELEASE_DATE-v$RELEASE_VERSION.zip
+          - RK3566 (Powkiddy X35H, X35S, X55): rk3566-update-uboot-ports-$RELEASE_DATE-v$RELEASE_VERSION.zip
 
           Extract directly into /roms/ports/ and run Update U-Boot.
           It selects the exact image for your DT model, backs up the boot area

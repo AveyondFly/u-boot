@@ -16,8 +16,9 @@ YYYY-MM-DD-vX.Y.Z.zip，将内容
 
 在 Ports 中运行 Update U-Boot，会自动读取运行中设备树的 model/compatible，
 按 devices.json 精确匹配机型及二进制，更新 /flash 所在启动卡的 U-Boot。
-RK3562 包支持 Xifan NGP45H 和 Pocket AIS；RK3566 包支持 Powkiddy x35h。
+RK3562 包支持 Xifan NGP45H 和 Pocket AIS；RK3566 包支持 Powkiddy x35h、x35s、x55。
 均内嵌各自的充电 DTB。
+X35H/X35S 使用 2718 mAh 电池参数；X55 使用 4000 mAh 及其独立电量曲线。
 不固定 mmcblk 编号。遇到未知/重复机型、兼容性不符、镜像校验不符、启动盘
 无法识别或写入区域与分区重叠，均会中止。
 

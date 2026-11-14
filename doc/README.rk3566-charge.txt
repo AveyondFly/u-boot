@@ -116,17 +116,58 @@ v1.1.5：用户确认充电版可以正常工作，启动参数确认充电探�
 
 同一固件 Release 发布两个附件，均以日期和版本号命名：
   rk3562-update-uboot-ports-YYYY-MM-DD-vX.Y.Z.zip：NGP45H、Pocket AIS。
-  rk3566-update-uboot-ports-YYYY-MM-DD-vX.Y.Z.zip：Powkiddy X35H。
+  rk3566-update-uboot-ports-YYYY-MM-DD-vX.Y.Z.zip：Powkiddy X35H、X35S、X55。
 每个平台的 ZIP 汇总该平台全部 profile，两个包来自同一源码提交。
 仅这两个 Ports ZIP 附在 Release，逐板包、单独校验文件在 Actions Artifacts。
 
 工作流仍为 .github/workflows/rk3562.yml，显示名 RK356x U-Boot。
-推送 rk3562 分支编译三个机型；推送 rk356x-vX.Y.Z-YYYY-MM-DD 标签发布。
+推送 rk3562 分支编译五个机型；推送 rk356x-vX.Y.Z-YYYY-MM-DD 标签发布。
 先推送分支提交，再推送标签。默认统一版本读取 RK356X_VERSION。
 手动 publish 强制编译全部平台和机型；任一失败则不发布正式 Release。
 
 新增 RK3566 设备需要独立 profile/defconfig/DTS/原厂输入/精确 model 注册，
-并补充 RK3566 输入 Release。矩阵自动发现新板号，不能复用 X35H 的电源和电池。
+并补充 RK3566 输入 Release。矩阵自动发现新板号，不能仅凭相同 SoC
+复用 X35H 的电源和电池；下述 X35S/X55 的硬件共用由用户明确确认。
+
+2026-11-14 X35S / X55 电池适配
+----------------------------
+
+用户明确确认 X35H、X35S、X55 除电池参数以外的启动相关硬件一致。
+据此 X35S、X55 使用 X35H 已能启动的 TF DDR/BL31，以及 X35H eMMC
+原厂硬件 DTB、SPL/U-Boot 控制树作为共用参考；仍不加入 BL32。
+这两款机型的输入是参考文件副本，并非从 X35S/X55 实机提取的新快照。
+firmware.source 和 control_dtb.source 分别记录固件、硬件输入的依据。
+不改早期 MMC、供电、充电 GPIO 或启动顺序，不适配游戏按键、摇杆和屏幕。
+
+两款各有独立的 board/rockchip/rk3566-profiles/powkiddy-<model>/、
+configs/rk3566_powkiddy_<model>_defconfig、控制 DTS 和 board-data 输入目录。
+Ports 按精确 model "Powkiddy x35s" / "Powkiddy x55" 选择各自的镜像，
+不将型号作为 X35H 镜像的别名。原有 X35H 配置保持不变。
+
+电池参数来自 distribution acceeda94ba17709a8be5b595033bbb3fba06b56 的
+projects/ROCKNIX/devices/RK356X/linux/dts/rockchip/ 下对应机型 DTS；
+board.json 的 battery_source 记录路径、源码版本和文件 SHA-256。
+  X35S：2718 mAh / Qmax 2990 mAh / 94 mOhm；OCV 3500..4183 mV；
+        休眠进入/退出电流 150/180 mA，低电压阈值 3500 mV，输入电流 2000 mA。
+  X55： 4000 mAh / Qmax 4400 mAh / 91 mOhm；OCV 3400..4138 mV；
+        休眠进入/退出电流 300/300 mA，低电压阈值 3400 mV，输入电流 1500 mA。
+两者使用各自完整的 21 点 OCV 曲线；output_checks 校验上述电池和输入电流。
+X55 的其余电池/充电标量已与共用参考核对一致，保持原值。
+
+本地构建和输入归档（对 x35s、x55 分别执行）：
+  ./build_uboot_rk3566_board.sh --board powkiddy-x35s
+  python3 scripts/ci_rk3562.py --soc rk3566 pack-inputs \
+    --board powkiddy-x35s --output build-rk3566-inputs-v2
+归档和同名 .sha256 添加到 rk3566-inputs-v2 输入 Release，CI 各自下载。
+同一固件 Release 的 RK3566 Ports ZIP 必须包含三款机型，缺一不可。
+
+2026-11-14 本地构建检查：X35S、X55 的 embedded 完整镜像均通过板级验证，
+包括最终 IDB 的 SPL/控制 DTB、TF1 优先顺序、DDR/BL31 保留、无 BL32 及
+40 个供电相关节点一致性。板级、控制 DTB、CI、Ports 更新器和打包回归
+共 60 项通过。对应输入归档补充至 rk3566-inputs-v2。
+
+X35S/X55 尚无本次镜像的实机测试记录：TF1 启动、eMMC-only 冷启动、
+关机充电均未实测；用户确认硬件共用及构建校验不能替代这些测试记录。
 
 2026-11-13 distribution 配置对照与第三轮诊断
 ----------------------------------------

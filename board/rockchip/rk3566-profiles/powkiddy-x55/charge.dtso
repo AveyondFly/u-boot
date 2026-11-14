@@ -1,0 +1,88 @@
+// SPDX-License-Identifier: GPL-2.0+
+/* Shared X35H wiring confirmed by user; X55 battery from distribution. */
+/dts-v1/;
+/plugin/;
+
+/ {
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			model = "Powkiddy x55";
+			compatible = "powkiddy,x55", "rockchip,rk3566";
+			charging-leds {
+				compatible = "gpio-leds";
+				pinctrl-names = "default";
+				pinctrl-0 = <&x55_charge_led_pins>;
+				x55_charging: charging {
+					label = "battery_charging";
+					gpios = <&gpio4 12 0>; /* GPIO4_B4, red */
+					default-state = "off";
+				};
+				x55_charged: charged {
+					label = "battery_full";
+					gpios = <&gpio4 13 0>; /* GPIO4_B5, green */
+					default-state = "off";
+				};
+				unused {
+					label = "charge_yellow_unused";
+					gpios = <&gpio4 14 0>;
+					default-state = "off";
+				};
+			};
+		};
+	};
+	fragment@1 {
+		target-path = "/pinctrl";
+		__overlay__ {
+			x55-charge {
+				x55_charge_led_pins: charge-led-pins {
+					rockchip,pins = <4 12 0 &pcfg_pull_none>,
+							<4 13 0 &pcfg_pull_none>,
+							<4 14 0 &pcfg_pull_none>;
+				};
+			};
+		};
+	};
+	fragment@2 {
+		target-path = "/charge-animation";
+		__overlay__ {
+			rockchip,uboot-charge-on = <1>;
+			rockchip,android-charge-on = <0>;
+			rockchip,uboot-exit-charge-auto = <0>;
+			rockchip,uboot-exit-charge-level = <1>;
+			rockchip,uboot-exit-charge-voltage = <3350>;
+			rockchip,screen-off-at-start;
+			rockchip,charging-led = <&x55_charging>;
+			rockchip,charged-led = <&x55_charged>;
+			rockchip,charged-led-min-soc = <90>;
+			rockchip,charge-leds-off-at-full;
+			rockchip,system-suspend = <0>;
+			rockchip,auto-wakeup-interval = <5>;
+			rockchip,auto-wakeup-screen-invert = <0>;
+		};
+	};
+	fragment@3 {
+		target-path = "/i2c@fdd40000/pmic@20/battery";
+		__overlay__ {
+			/* distribution RK3566/RK356X rk3566-powkiddy-x55.dts. */
+			ocv_table = <3400 3553 3621 3688 3735 3768 3801 3826 3843 3857 3878
+				     3904 3934 3972 4006 4020 4030 4044 4059 4083 4138>;
+			design_capacity = <4000>;
+			design_qmax = <4400>;
+			bat_res = <91>;
+			sleep_enter_current = <300>;
+			sleep_exit_current = <300>;
+			sleep_filter_current = <100>;
+			power_off_thresd = <3400>;
+			rockchip,charger-detect-source = "pmic";
+			rockchip,usb-input-init;
+			rockchip,charger-detect-timeout-ms = <3000>;
+		};
+	};
+	fragment@4 {
+		target-path = "/i2c@fdd40000/pmic@20/charger";
+		__overlay__ {
+			max_input_current = <1500>;
+		};
+	};
+};

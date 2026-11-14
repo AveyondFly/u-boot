@@ -1,0 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0+
+/dts-v1/;
+#include "rk3566-powkiddy-x35s-vendor.dtsi"
+#include "rk3566-profile-u-boot.dtsi"
+#include "rk3566-powkiddy-x35s-mmc.dtsi"

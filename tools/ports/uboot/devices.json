@@ -36,6 +36,30 @@
       "size": 16744448,
       "offset": 32768,
       "source_commit": "a40bfbc897b56c518cd9d210ce99fd5ec86d0a54"
+    },
+    {
+      "id": "powkiddy-x35s",
+      "models": [
+        "Powkiddy x35s"
+      ],
+      "compatible": "rockchip,rk3566",
+      "image": "powkiddy-x35s-uboot.bin",
+      "sha256": "9d147fb12ac55e6a2d7a042e2108505fc105d0cf8ab57585ba399b03c81e2a24",
+      "size": 16744448,
+      "offset": 32768,
+      "source_commit": "536f76c2f96461558e931ebb2a036021e635e22c"
+    },
+    {
+      "id": "powkiddy-x55",
+      "models": [
+        "Powkiddy x55"
+      ],
+      "compatible": "rockchip,rk3566",
+      "image": "powkiddy-x55-uboot.bin",
+      "sha256": "96ed02499df21cf4648646fe7a96061018704b7a6add3d046f49f9e68d8881e7",
+      "size": 16744448,
+      "offset": 32768,
+      "source_commit": "536f76c2f96461558e931ebb2a036021e635e22c"
     }
   ]
 }
